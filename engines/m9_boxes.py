@@ -7,7 +7,7 @@ from PIL import Image
 import numpy as np
 
 NAME = "Profile 9 — ACS Deep 2nd-Pass Clean Engine"
-DESCRIPTION = "Preserves 100% full-margin layout (0% crop) while erasing dark watermark stamps, grey logos, and enhancing readability."
+DESCRIPTION = "Preserves 100% full-margin layout (0% crop) while erasing dark watermark stamps, telegram pills, and purge promotional pages."
 
 def hex_to_rgb(hex_str):
     hex_str = hex_str.lstrip('#')
@@ -39,14 +39,90 @@ def parse_target_pages(input_str, total_pages):
                 pages.add(p - 1)
     return pages if pages else None
 
+def erase_pill_watermarks(arr):
+    """
+    Erases Telegram Badge Pill Watermarks (@AdmissionStuffs / @HSC_Stuffs)
+    Matches native JS/WASM erasePillWatermarksWorker logic.
+    """
+    h, w, _ = arr.shape
+    r = arr[:,:,0].astype(np.float32)
+    g = arr[:,:,1].astype(np.float32)
+    b = arr[:,:,2].astype(np.float32)
+    br = (r * 299 + g * 587 + b * 114) / 1000.0
+
+    minLineLen = round(w * 0.07)
+    maxLineLen = round(w * 0.35)
+    minDy = round(h * 0.010)
+    maxDy = round(h * 0.065)
+
+    hLines = []
+    for y in range(int(h * 0.03), int(h * 0.97)):
+        run = 0
+        startX = 0
+        row = br[y, :]
+        for x in range(10, w - 10):
+            if row[x] < 185:
+                if run == 0: startX = x
+                run += 1
+            else:
+                if minLineLen <= run <= maxLineLen:
+                    hLines.append({'y': y, 'startX': startX, 'endX': x, 'len': run})
+                run = 0
+
+    mergedHLines = []
+    for l in hLines:
+        merged = False
+        for m in mergedHLines:
+            if abs(l['y'] - m['y']) <= 5 and abs(l['startX'] - m['startX']) < 45 and abs(l['len'] - m['len']) < 45:
+                m['y'] = min(m['y'], l['y'])
+                m['startX'] = min(m['startX'], l['startX'])
+                m['endX'] = max(m['endX'], l['endX'])
+                m['len'] = m['endX'] - m['startX']
+                merged = True
+                break
+        if not merged:
+            mergedHLines.append(dict(l))
+
+    pills = []
+    for i in range(len(mergedHLines)):
+        topL = mergedHLines[i]
+        for j in range(i + 1, len(mergedHLines)):
+            btmL = mergedHLines[j]
+            dy = btmL['y'] - topL['y']
+            if dy < minDy or dy > maxDy: continue
+            if abs(topL['startX'] - btmL['startX']) > 45: continue
+            if abs(topL['len'] - btmL['len']) > 45: continue
+
+            boxX1 = min(topL['startX'], btmL['startX'])
+            boxX2 = max(topL['endX'], btmL['endX'])
+            boxW = boxX2 - boxX1
+            boxH = dy
+
+            aspect = boxW / boxH
+            if aspect < 2.0 or aspect > 7.5: continue
+
+            pills.append({
+                'eraseX1': max(0, boxX1 - 8),
+                'eraseX2': min(w - 1, boxX2 + 8),
+                'eraseY1': max(0, topL['y'] - 8),
+                'eraseY2': min(h - 1, btmL['y'] + 8)
+            })
+
+    # Erase detected pill stamps
+    for p in pills:
+        arr[p['eraseY1']:p['eraseY2'], p['eraseX1']:p['eraseX2']] = 255
+
 def apply_acs_clean(img: Image.Image, opts: dict) -> Image.Image:
     """
     Dedicated ACS Deep 2nd Pass Engine:
-    Zero crop by default, targets pink, coral and stubborn dark grey watermarks (br 78-165).
+    Zero crop by default, targets pills, stamps, pink, coral and dark grey watermarks.
     """
     img = img.convert("RGB")
     arr = np.array(img, dtype=np.uint8)
     h, w, _ = arr.shape
+
+    # 1. Erase structural Telegram Pill Badges & Watermark Stamps
+    erase_pill_watermarks(arr)
 
     bg_whiten = opts.get("bg_whiten", 165)
     text_darken = opts.get("text_darken", 80)
@@ -123,6 +199,32 @@ def apply_acs_clean(img: Image.Image, opts: dict) -> Image.Image:
     arr[m_top:m_bottom, m_left:m_right] = np.clip(region, 0, 255).astype(np.uint8)
     return Image.fromarray(arr)
 
+def is_promotional_page(page, p0_sig=None, pno=0):
+    """
+    Robust multi-feature promotional ad page detector matching original project:
+    1. Duplicate cover match against Page 1
+    2. Structural link check: 2 giant full-page clickable promo links
+    """
+    # Check 1: Matching Page 1 cover signature
+    if p0_sig:
+        p_pix = page.get_pixmap(dpi=36)
+        if bytes(p_pix.samples) == p0_sig:
+            return True
+
+    # Check 2: Two large promo links covering the page (t.me/admission_stuffs + t.me/HSCStuffs)
+    links = page.get_links()
+    if len(links) >= 2:
+        large_promo_links = 0
+        for l in links:
+            uri = l.get('uri', '').lower()
+            rect = l.get('from')
+            if ('t.me' in uri or 'facebook' in uri) and rect and rect.height > 150:
+                large_promo_links += 1
+        if large_promo_links >= 2:
+            return True
+
+    return False
+
 def process(input_path, output_path=None, options=None, progress_callback=None):
     if options is None:
         options = {}
@@ -138,6 +240,7 @@ def process(input_path, output_path=None, options=None, progress_callback=None):
     target_pages_set = parse_target_pages(options.get("target_pages", ""), total_pages)
     delete_promo = options.get("delete_promo", False)
 
+    # Fingerprint page 1 for promo matching
     p0_sig = None
     if delete_promo and total_pages > 1:
         p0_pix = src_doc[0].get_pixmap(dpi=36)
@@ -153,11 +256,10 @@ def process(input_path, output_path=None, options=None, progress_callback=None):
         src_page = src_doc[i]
         page_rect = src_page.rect
 
-        if delete_promo and p0_sig:
-            p_pix = src_page.get_pixmap(dpi=36)
-            if bytes(p_pix.samples) == p0_sig:
-                promo_removed.append(i + 1)
-                continue
+        # Promo page check
+        if delete_promo and is_promotional_page(src_page, p0_sig, i):
+            promo_removed.append(i + 1)
+            continue
 
         if target_pages_set is not None and i not in target_pages_set:
             out_page = out_doc.new_page(width=page_rect.width, height=page_rect.height)
