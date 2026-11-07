@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>PDF Cleaner Studio — Python Engine</title>
+  <title>ClearMark Studio — PDF Watermark Remover</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -44,65 +44,118 @@
       </div>
 
       <!-- Engine Selector -->
-      <div class="panel">
-        <div class="panel-header">Cleaning Engine / Profile</div>
+      <div class="inspector-section">
+        <div class="section-label-row">
+          <span class="section-label">Cleaning Engine / Profile</span>
+        </div>
         <select id="engineSelector" class="form-select">
           <option value="m1_live" selected>M1 — Live Interactive Spectrum</option>
-          <option value="m9_boxes">M9 — ACS Box & Dark Stamp Purge</option>
-          <option value="m13_stream">M13 — Udvash Ad & Red Text Stream</option>
+          <option value="m9_boxes">M9 — ACS Box &amp; Dark Stamp Purge</option>
+          <option value="m13_stream">M13 — Udvash Ad &amp; Red Text Stream</option>
         </select>
         <div class="engine-desc" id="engineDesc">Interactive spectrum based on color and brightness with live real-time preview.</div>
       </div>
 
       <!-- Live Interactive Controls (Shown for M1) -->
-      <div class="panel" id="m1Controls">
-        <div class="panel-header">Watermark & Background Suppression</div>
+      <div id="m1Controls">
         
-        <div class="control-group">
-          <label>Whiten Background (Luminance): <span id="valBgWhiten" class="val-pill">165</span></label>
-          <input type="range" id="bgWhiten" min="100" max="250" value="165" class="slider">
+        <!-- 1. SPATIAL MARGINS -->
+        <div class="inspector-section">
+          <div class="section-label-row">
+            <span class="section-label">SPATIAL MARGINS</span>
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>Top Header Crop</span>
+              <span class="slider-val" id="valTopCrop">4.6%</span>
+            </div>
+            <input type="range" id="sliderTopCrop" min="0" max="25" step="0.1" value="4.6" class="slider">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>Bottom Footer Crop</span>
+              <span class="slider-val" id="valBottomCrop">91.5%</span>
+            </div>
+            <input type="range" id="sliderBottomCrop" min="75" max="100" step="0.1" value="91.5" class="slider">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>Side Borders Crop</span>
+              <span class="slider-val" id="valSideCrop">3.8%</span>
+            </div>
+            <input type="range" id="sliderSideCrop" min="0" max="15" step="0.1" value="3.8" class="slider">
+          </div>
         </div>
 
-        <div class="control-group">
-          <label>Text Darken Boost: <span id="valTextDarken" class="val-pill">82</span></label>
-          <input type="range" id="textDarken" min="0" max="130" value="82" class="slider">
+        <!-- 2. TARGET COLOR FILTER -->
+        <div class="inspector-section">
+          <div class="section-label-row">
+            <span class="section-label">TARGET COLOR FILTER</span>
+          </div>
+
+          <div class="color-picker-box" id="colorPickerBox">
+            <input type="color" id="targetColorPicker" class="color-input-bubble" value="#ec4899">
+            <div style="flex: 1;">
+              <div style="font-weight: 700; color: #f8fafc; font-family: 'JetBrains Mono', monospace;" id="targetColorHex">#EC4899</div>
+              <div style="color: var(--text-muted); font-size: 0.72rem;">Click canvas or pick color</div>
+            </div>
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>Color Tolerance</span>
+              <span class="slider-val" id="valTolerance">28</span>
+            </div>
+            <input type="range" id="sliderTolerance" min="0" max="100" step="1" value="28" class="slider">
+          </div>
         </div>
 
-        <div class="control-group">
-          <label>Target Color &amp; Tolerance: <span id="valTol" class="val-pill">28</span></label>
-          <div class="color-picker-row">
-            <input type="color" id="targetColorPicker" value="#ec4899" class="color-box">
-            <input type="text" id="targetColorHex" value="#ec4899" class="hex-input">
+        <!-- 3. SMART THRESHOLDS -->
+        <div class="inspector-section">
+          <div class="section-label-row">
+            <span class="section-label">SMART THRESHOLDS</span>
           </div>
-          <input type="range" id="tolerance" min="0" max="100" value="28" class="slider" style="margin-top: 8px;">
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>Background Whiten Cutoff</span>
+              <span class="slider-val" id="valWhiten">165</span>
+            </div>
+            <input type="range" id="sliderWhiten" min="120" max="250" step="1" value="165" class="slider">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>Text Contrast Boost</span>
+              <span class="slider-val" id="valTextDarken">82</span>
+            </div>
+            <input type="range" id="sliderTextDarken" min="0" max="120" step="1" value="82" class="slider">
+          </div>
+
+          <label class="toggle-row">
+            <span>Purge Pink / Coral Watermarks</span>
+            <input type="checkbox" id="chkCleanPink" checked class="switch-checkbox">
+          </label>
+
+          <label class="toggle-row">
+            <span>Purge Yellow / Scanner Tint</span>
+            <input type="checkbox" id="chkCleanYellow" checked class="switch-checkbox">
+          </label>
+
+          <label class="toggle-row">
+            <span>Purge Grey Diagonal Logos</span>
+            <input type="checkbox" id="chkCleanGrey" checked class="switch-checkbox">
+          </label>
+
+          <label class="toggle-row">
+            <span>Preserve Colors (Prevent B&amp;W)</span>
+            <input type="checkbox" id="chkPreserveColor" checked class="switch-checkbox">
+          </label>
         </div>
 
-        <div class="panel-sub-header">Special Cleaner Flags</div>
-        <div class="checkbox-group">
-          <label><input type="checkbox" id="chkCleanPink" checked> Clean Pink / Telegram Watermarks</label>
-          <label><input type="checkbox" id="chkCleanGrey" checked> Clean Grey / Ghost Watermarks</label>
-          <label><input type="checkbox" id="chkPreserveColor" checked> Preserve Color Math/Diagrams</label>
-        </div>
-
-        <div class="panel-sub-header">Precision Crop Margins (% of Page)</div>
-        <div class="margin-grid">
-          <div>
-            <label>Top</label>
-            <input type="number" id="mTop" value="4.6" step="0.5" min="0" max="40" class="num-input">
-          </div>
-          <div>
-            <label>Bottom</label>
-            <input type="number" id="mBottom" value="8.5" step="0.5" min="0" max="40" class="num-input">
-          </div>
-          <div>
-            <label>Left</label>
-            <input type="number" id="mLeft" value="3.8" step="0.5" min="0" max="40" class="num-input">
-          </div>
-          <div>
-            <label>Right</label>
-            <input type="number" id="mRight" value="3.8" step="0.5" min="0" max="40" class="num-input">
-          </div>
-        </div>
       </div>
 
       <!-- Action Button & Progress Tracker -->
@@ -142,14 +195,14 @@
         </div>
       </div>
 
-      <!-- Preview Image Display -->
+      <!-- Preview Image Display with Canvas Eyedropper Support -->
       <div class="viewport" id="viewport">
         <div class="empty-state" id="emptyState">
           <div class="empty-icon">📖</div>
           <h3>Upload a PDF to view preview</h3>
           <p>Instantaneous real-time preview powered by Python PyMuPDF + NumPy.</p>
         </div>
-        <img id="previewImg" class="preview-img" style="display:none;" alt="PDF Preview">
+        <canvas id="previewCanvas" class="preview-img" style="display:none; cursor: crosshair;"></canvas>
       </div>
 
     </section>

@@ -20,37 +20,45 @@ const progressBarFill = document.getElementById("progressBarFill");
 const progressText = document.getElementById("progressText");
 const progressPercent = document.getElementById("progressPercent");
 
-const bgWhiten = document.getElementById("bgWhiten");
-const valBgWhiten = document.getElementById("valBgWhiten");
-const textDarken = document.getElementById("textDarken");
-const valTextDarken = document.getElementById("valTextDarken");
-const tolerance = document.getElementById("tolerance");
-const valTol = document.getElementById("valTol");
+// Spatial Margins
+const sliderTopCrop = document.getElementById("sliderTopCrop");
+const valTopCrop = document.getElementById("valTopCrop");
+const sliderBottomCrop = document.getElementById("sliderBottomCrop");
+const valBottomCrop = document.getElementById("valBottomCrop");
+const sliderSideCrop = document.getElementById("sliderSideCrop");
+const valSideCrop = document.getElementById("valSideCrop");
+
+// Target Color Filter
 const targetColorPicker = document.getElementById("targetColorPicker");
 const targetColorHex = document.getElementById("targetColorHex");
+const sliderTolerance = document.getElementById("sliderTolerance");
+const valTolerance = document.getElementById("valTolerance");
 
+// Smart Thresholds
+const sliderWhiten = document.getElementById("sliderWhiten");
+const valWhiten = document.getElementById("valWhiten");
+const sliderTextDarken = document.getElementById("sliderTextDarken");
+const valTextDarken = document.getElementById("valTextDarken");
+
+// Flags
 const chkCleanPink = document.getElementById("chkCleanPink");
+const chkCleanYellow = document.getElementById("chkCleanYellow");
 const chkCleanGrey = document.getElementById("chkCleanGrey");
 const chkPreserveColor = document.getElementById("chkPreserveColor");
-
-const mTop = document.getElementById("mTop");
-const mBottom = document.getElementById("mBottom");
-const mLeft = document.getElementById("mLeft");
-const mRight = document.getElementById("mRight");
 
 const btnPrevPage = document.getElementById("btnPrevPage");
 const btnNextPage = document.getElementById("btnNextPage");
 const pageIndicator = document.getElementById("pageIndicator");
 const tabCleaned = document.getElementById("tabCleaned");
 const tabOriginal = document.getElementById("tabOriginal");
-const previewImg = document.getElementById("previewImg");
+const previewCanvas = document.getElementById("previewCanvas");
 const emptyState = document.getElementById("emptyState");
 
 const btnCheckUpdate = document.getElementById("btnCheckUpdate");
 const updateText = document.getElementById("updateText");
 
 dropZone.addEventListener("click", () => fileInput.click());
-dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.style.borderColor = "#3b82f6"; });
+dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.style.borderColor = "#38bdf8"; });
 dropZone.addEventListener("dragleave", () => { dropZone.style.borderColor = ""; });
 dropZone.addEventListener("drop", (e) => {
   e.preventDefault();
@@ -91,7 +99,7 @@ function handleFileUpload(file) {
       uploadHint.textContent = `${totalPages} pages loaded. Ready to clean.`;
       btnExportPdf.disabled = false;
       emptyState.style.display = "none";
-      previewImg.style.display = "block";
+      previewCanvas.style.display = "block";
       requestPreview();
     } else {
       alert("Error uploading PDF: " + (data.error || "Unknown"));
@@ -117,52 +125,70 @@ engineSelector.addEventListener("change", () => {
   }
 });
 
-function bindSlider(slider, label) {
+function bindSlider(slider, label, suffix = "") {
   slider.addEventListener("input", () => {
-    label.textContent = slider.value;
+    label.textContent = slider.value + suffix;
     schedulePreview();
   });
 }
-bindSlider(bgWhiten, valBgWhiten);
-bindSlider(textDarken, valTextDarken);
-bindSlider(tolerance, valTol);
+
+bindSlider(sliderTopCrop, valTopCrop, "%");
+bindSlider(sliderBottomCrop, valBottomCrop, "%");
+bindSlider(sliderSideCrop, valSideCrop, "%");
+bindSlider(sliderTolerance, valTolerance);
+bindSlider(sliderWhiten, valWhiten);
+bindSlider(sliderTextDarken, valTextDarken);
 
 targetColorPicker.addEventListener("input", () => {
-  targetColorHex.value = targetColorPicker.value;
-  schedulePreview();
-});
-targetColorHex.addEventListener("change", () => {
-  targetColorPicker.value = targetColorHex.value;
+  targetColorHex.textContent = targetColorPicker.value.toUpperCase();
   schedulePreview();
 });
 
-[chkCleanPink, chkCleanGrey, chkPreserveColor].forEach(chk => {
+// Eyedropper on Canvas click!
+previewCanvas.addEventListener("click", (e) => {
+  const rect = previewCanvas.getBoundingClientRect();
+  const scaleX = previewCanvas.width / rect.width;
+  const scaleY = previewCanvas.height / rect.height;
+  const x = Math.floor((e.clientX - rect.left) * scaleX);
+  const y = Math.floor((e.clientY - rect.top) * scaleY);
+
+  const ctx = previewCanvas.getContext("2d");
+  const pixel = ctx.getImageData(x, y, 1, 1).data;
+  const hex = "#" + ((1 << 24) + (pixel[0] << 16) + (pixel[1] << 8) + pixel[2]).toString(16).slice(1).toUpperCase();
+  
+  targetColorPicker.value = hex;
+  targetColorHex.textContent = hex;
+  schedulePreview();
+});
+
+[chkCleanPink, chkCleanYellow, chkCleanGrey, chkPreserveColor].forEach(chk => {
   chk.addEventListener("change", schedulePreview);
 });
 
-[mTop, mBottom, mLeft, mRight].forEach(m => {
-  m.addEventListener("input", schedulePreview);
-});
-
-// Snappy 80ms preview response debounce
 function schedulePreview() {
   if (previewDebounce) clearTimeout(previewDebounce);
-  previewDebounce = setTimeout(requestPreview, 80);
+  previewDebounce = setTimeout(requestPreview, 60);
 }
 
 function getOptions() {
+  const topPct = parseFloat(sliderTopCrop.value) || 0;
+  const bottomVal = parseFloat(sliderBottomCrop.value) || 100;
+  const bottomPct = 100 - bottomVal; // convert 91.5% mark to 8.5% margin
+  const sidePct = parseFloat(sliderSideCrop.value) || 0;
+
   return {
-    bg_whiten: parseInt(bgWhiten.value) || 165,
-    text_darken: parseInt(textDarken.value) || 82,
-    tolerance: parseInt(tolerance.value) || 28,
-    target_color: targetColorHex.value || "#ec4899",
+    margin_top: topPct,
+    margin_bottom: bottomPct,
+    margin_left: sidePct,
+    margin_right: sidePct,
+    tolerance: parseInt(sliderTolerance.value) || 28,
+    target_color: targetColorPicker.value || "#ec4899",
+    bg_whiten: parseInt(sliderWhiten.value) || 165,
+    text_darken: parseInt(sliderTextDarken.value) || 82,
     clean_pink: chkCleanPink.checked,
+    clean_yellow: chkCleanYellow.checked,
     clean_grey: chkCleanGrey.checked,
-    preserve_color: chkPreserveColor.checked,
-    margin_top: parseFloat(mTop.value) || 0,
-    margin_bottom: parseFloat(mBottom.value) || 0,
-    margin_left: parseFloat(mLeft.value) || 0,
-    margin_right: parseFloat(mRight.value) || 0
+    preserve_color: chkPreserveColor.checked
   };
 }
 
@@ -181,11 +207,23 @@ function requestPreview() {
   .catch(console.error);
 }
 
+function renderImageToCanvas(dataUrl) {
+  if (!dataUrl) return;
+  const img = new Image();
+  img.onload = () => {
+    previewCanvas.width = img.width;
+    previewCanvas.height = img.height;
+    const ctx = previewCanvas.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+  };
+  img.src = dataUrl;
+}
+
 function applyCurrentView() {
   if (tabCleaned.classList.contains("active")) {
-    if (currentCleanUrl) previewImg.src = currentCleanUrl;
+    renderImageToCanvas(currentCleanUrl);
   } else {
-    if (currentOrigUrl) previewImg.src = currentOrigUrl;
+    renderImageToCanvas(currentOrigUrl);
   }
 }
 
