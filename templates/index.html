@@ -56,48 +56,51 @@
 
       <!-- Live Interactive Controls (Shown for M1) -->
       <div class="panel" id="m1Controls">
-        <div class="panel-header">Live Tuning Parameters</div>
+        <div class="panel-header">Watermark & Background Suppression</div>
         
         <div class="control-group">
-          <label>Min Brightness: <span id="valMinBr" class="val-pill">185</span></label>
-          <input type="range" id="minBrightness" min="0" max="255" value="185" class="slider">
+          <label>Whiten Background (Luminance): <span id="valBgWhiten" class="val-pill">165</span></label>
+          <input type="range" id="bgWhiten" min="100" max="250" value="165" class="slider">
         </div>
 
         <div class="control-group">
-          <label>Max Brightness: <span id="valMaxBr" class="val-pill">245</span></label>
-          <input type="range" id="maxBrightness" min="0" max="255" value="245" class="slider">
+          <label>Text Darken Boost: <span id="valTextDarken" class="val-pill">82</span></label>
+          <input type="range" id="textDarken" min="0" max="130" value="82" class="slider">
         </div>
 
         <div class="control-group">
-          <label>Color Match Tolerance: <span id="valTol" class="val-pill">40</span></label>
-          <input type="range" id="tolerance" min="0" max="150" value="40" class="slider">
-        </div>
-
-        <div class="control-group">
-          <label>Target Color (Hex):</label>
+          <label>Target Color &amp; Tolerance: <span id="valTol" class="val-pill">28</span></label>
           <div class="color-picker-row">
-            <input type="color" id="targetColorPicker" value="#d8d8d8" class="color-box">
-            <input type="text" id="targetColorHex" value="#d8d8d8" class="hex-input">
+            <input type="color" id="targetColorPicker" value="#ec4899" class="color-box">
+            <input type="text" id="targetColorHex" value="#ec4899" class="hex-input">
           </div>
+          <input type="range" id="tolerance" min="0" max="100" value="28" class="slider" style="margin-top: 8px;">
         </div>
 
-        <div class="panel-sub-header">Safety Margins (% of Page)</div>
+        <div class="panel-sub-header">Special Cleaner Flags</div>
+        <div class="checkbox-group">
+          <label><input type="checkbox" id="chkCleanPink" checked> Clean Pink / Telegram Watermarks</label>
+          <label><input type="checkbox" id="chkCleanGrey" checked> Clean Grey / Ghost Watermarks</label>
+          <label><input type="checkbox" id="chkPreserveColor" checked> Preserve Color Math/Diagrams</label>
+        </div>
+
+        <div class="panel-sub-header">Precision Crop Margins (% of Page)</div>
         <div class="margin-grid">
           <div>
             <label>Top</label>
-            <input type="number" id="mTop" value="0" min="0" max="50" class="num-input">
+            <input type="number" id="mTop" value="4.6" step="0.5" min="0" max="40" class="num-input">
           </div>
           <div>
             <label>Bottom</label>
-            <input type="number" id="mBottom" value="0" min="0" max="50" class="num-input">
+            <input type="number" id="mBottom" value="8.5" step="0.5" min="0" max="40" class="num-input">
           </div>
           <div>
             <label>Left</label>
-            <input type="number" id="mLeft" value="0" min="0" max="50" class="num-input">
+            <input type="number" id="mLeft" value="3.8" step="0.5" min="0" max="40" class="num-input">
           </div>
           <div>
             <label>Right</label>
-            <input type="number" id="mRight" value="0" min="0" max="50" class="num-input">
+            <input type="number" id="mRight" value="3.8" step="0.5" min="0" max="40" class="num-input">
           </div>
         </div>
       </div>
@@ -144,7 +147,7 @@
         <div class="empty-state" id="emptyState">
           <div class="empty-icon">📖</div>
           <h3>Upload a PDF to view preview</h3>
-          <p>Instantaneous real-time preview powered by Python PyMuPDF.</p>
+          <p>Instantaneous real-time preview powered by Python PyMuPDF + NumPy.</p>
         </div>
         <img id="previewImg" class="preview-img" style="display:none;" alt="PDF Preview">
       </div>

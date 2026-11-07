@@ -20,14 +20,18 @@ const progressBarFill = document.getElementById("progressBarFill");
 const progressText = document.getElementById("progressText");
 const progressPercent = document.getElementById("progressPercent");
 
-const minBr = document.getElementById("minBrightness");
-const maxBr = document.getElementById("maxBrightness");
+const bgWhiten = document.getElementById("bgWhiten");
+const valBgWhiten = document.getElementById("valBgWhiten");
+const textDarken = document.getElementById("textDarken");
+const valTextDarken = document.getElementById("valTextDarken");
 const tolerance = document.getElementById("tolerance");
-const valMinBr = document.getElementById("valMinBr");
-const valMaxBr = document.getElementById("valMaxBr");
 const valTol = document.getElementById("valTol");
 const targetColorPicker = document.getElementById("targetColorPicker");
 const targetColorHex = document.getElementById("targetColorHex");
+
+const chkCleanPink = document.getElementById("chkCleanPink");
+const chkCleanGrey = document.getElementById("chkCleanGrey");
+const chkPreserveColor = document.getElementById("chkPreserveColor");
 
 const mTop = document.getElementById("mTop");
 const mBottom = document.getElementById("mBottom");
@@ -69,7 +73,7 @@ function handleFileUpload(file) {
   }
 
   uploadFilename.textContent = file.name;
-  uploadHint.textContent = "Uploading & loading pages...";
+  uploadHint.textContent = "Loading pages...";
   
   const formData = new FormData();
   formData.append("file", file);
@@ -119,8 +123,8 @@ function bindSlider(slider, label) {
     schedulePreview();
   });
 }
-bindSlider(minBr, valMinBr);
-bindSlider(maxBr, valMaxBr);
+bindSlider(bgWhiten, valBgWhiten);
+bindSlider(textDarken, valTextDarken);
 bindSlider(tolerance, valTol);
 
 targetColorPicker.addEventListener("input", () => {
@@ -132,26 +136,33 @@ targetColorHex.addEventListener("change", () => {
   schedulePreview();
 });
 
+[chkCleanPink, chkCleanGrey, chkPreserveColor].forEach(chk => {
+  chk.addEventListener("change", schedulePreview);
+});
+
 [mTop, mBottom, mLeft, mRight].forEach(m => {
   m.addEventListener("input", schedulePreview);
 });
 
+// Snappy 80ms preview response debounce
 function schedulePreview() {
   if (previewDebounce) clearTimeout(previewDebounce);
-  previewDebounce = setTimeout(requestPreview, 250);
+  previewDebounce = setTimeout(requestPreview, 80);
 }
 
 function getOptions() {
   return {
-    mode: "brightness",
-    min_brightness: parseInt(minBr.value),
-    max_brightness: parseInt(maxBr.value),
-    tolerance: parseInt(tolerance.value),
-    target_color: targetColorHex.value,
-    margin_top: parseInt(mTop.value) || 0,
-    margin_bottom: parseInt(mBottom.value) || 0,
-    margin_left: parseInt(mLeft.value) || 0,
-    margin_right: parseInt(mRight.value) || 0
+    bg_whiten: parseInt(bgWhiten.value) || 165,
+    text_darken: parseInt(textDarken.value) || 82,
+    tolerance: parseInt(tolerance.value) || 28,
+    target_color: targetColorHex.value || "#ec4899",
+    clean_pink: chkCleanPink.checked,
+    clean_grey: chkCleanGrey.checked,
+    preserve_color: chkPreserveColor.checked,
+    margin_top: parseFloat(mTop.value) || 0,
+    margin_bottom: parseFloat(mBottom.value) || 0,
+    margin_left: parseFloat(mLeft.value) || 0,
+    margin_right: parseFloat(mRight.value) || 0
   };
 }
 
