@@ -106,7 +106,6 @@ def apply_image_clean(img: Image.Image, opts: dict) -> Image.Image:
         remove_mask |= (pink_cond1 | pink_cond2)
 
     if clean_yellow:
-        # Yellow / Scanner tint: high R and G, lower B
         yellow_cond = (r > 160) & (g > 155) & (b < 145) & (br > 70)
         remove_mask |= yellow_cond
 
@@ -158,11 +157,6 @@ def preview_page(input_path, page_num=0, options=None):
     return buf_orig.getvalue(), buf_clean.getvalue()
 
 def process(input_path, output_path=None, options=None, progress_callback=None):
-    """
-    Robust high-resolution page rendering and reconstruction:
-    Renders each page cleanly at full fidelity, applies vectorized M1 clean filters,
-    and builds the final PDF without corrupting transparency masks (SMask) or PDF XObject dictionaries.
-    """
     if options is None:
         options = {}
     if not output_path:
@@ -176,14 +170,30 @@ def process(input_path, output_path=None, options=None, progress_callback=None):
 
     target_pages_set = parse_target_pages(options.get("target_pages", ""), total_pages)
     delete_promo = options.get("delete_promo", False)
+
+    # 1. Fingerprint first page (promotional cover) at low resolution for lightning-fast matching
+    p0_sig = None
+    if delete_promo and total_pages > 1:
+        p0_pix = src_doc[0].get_pixmap(dpi=36)
+        p0_sig = bytes(p0_pix.samples)
+
+    promo_removed = []
     processed_count = 0
 
     for i in range(total_pages):
         if progress_callback:
-            progress_callback(i + 1, total_pages, f"Cleaning page {i + 1}/{total_pages}...")
+            progress_callback(i + 1, total_pages, f"Checking & cleaning page {i + 1}/{total_pages}...")
 
         src_page = src_doc[i]
         page_rect = src_page.rect
+
+        # Check if page is an identical promotional ad duplicate
+        if delete_promo and p0_sig:
+            p_pix = src_page.get_pixmap(dpi=36)
+            if bytes(p_pix.samples) == p0_sig:
+                # Page 1 or duplicates (51, 101, 151, 198 etc.)
+                promo_removed.append(i + 1)
+                continue
 
         # Skip if page scope is set and page is not included
         if target_pages_set is not None and i not in target_pages_set:
@@ -194,11 +204,6 @@ def process(input_path, output_path=None, options=None, progress_callback=None):
         # Render source page at high print quality (150 DPI)
         pix = src_page.get_pixmap(dpi=150)
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-
-        # Detect promotional duplicate cover if delete_promo is on
-        if delete_promo and i > 0 and i == total_pages - 1:
-            # Common promo page at the end
-            pass
 
         cleaned_img = apply_image_clean(img, options)
 
@@ -221,6 +226,7 @@ def process(input_path, output_path=None, options=None, progress_callback=None):
         "success": True,
         "total_pages": total_pages,
         "processed_pages": processed_count,
+        "promo_pages_removed": promo_removed,
         "output_path": output_path,
         "elapsed": f"{elapsed}s"
     }

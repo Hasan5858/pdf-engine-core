@@ -318,7 +318,12 @@ function startProgressPolling() {
         btnExportPdf.disabled = false;
         
         if (p.result && p.result.success) {
-          exportStatus.textContent = `✅ Complete in ${p.result.elapsed}! Saved to: ${p.result.output_path}`;
+          const res = p.result;
+          let promoInfo = "";
+          if (res.promo_pages_removed && res.promo_pages_removed.length > 0) {
+            promoInfo = ` | 🗑️ Removed ${res.promo_pages_removed.length} promo page(s) (${res.promo_pages_removed.join(', ')})`;
+          }
+          exportStatus.textContent = `✅ Complete in ${res.elapsed}! Processed ${res.processed_pages || res.cleaned_pages || res.total_pages} pages${promoInfo}. Saved to: ${res.output_path}`;
           exportStatus.style.color = "#10b981";
         } else if (p.error) {
           exportStatus.textContent = "❌ Error: " + p.error;
