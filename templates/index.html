@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PDF Cleaner Studio — Python Engine</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-logo">⚡</div>
+      <div class="brand-text">
+        <span class="title">ClearMark Studio</span>
+        <span class="subtitle">Python High-Speed Processing</span>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <div class="update-badge" id="updateBadge">
+        <span class="dot"></span>
+        <span id="updateText">Engine Ready</span>
+      </div>
+      <button class="btn btn-secondary" id="btnCheckUpdate">Check Sync</button>
+    </div>
+  </header>
+
+  <!-- Main Grid Workspace -->
+  <main class="studio-container">
+    
+    <!-- Left Configuration Sidebar -->
+    <aside class="sidebar">
+      
+      <!-- Upload Box -->
+      <div class="panel upload-panel" id="dropZone">
+        <input type="file" id="pdfFileInput" accept="application/pdf" style="display:none;">
+        <div class="upload-icon">📄</div>
+        <div class="upload-title" id="uploadFilename">Click or Drag PDF Here</div>
+        <div class="upload-hint" id="uploadHint">Supports books up to 500+ MB</div>
+      </div>
+
+      <!-- Engine Selector -->
+      <div class="panel">
+        <div class="panel-header">Cleaning Engine / Profile</div>
+        <select id="engineSelector" class="form-select">
+          <option value="m1_live" selected>M1 — Live Interactive Spectrum</option>
+          <option value="m9_boxes">M9 — ACS Box & Dark Stamp Purge</option>
+          <option value="m13_stream">M13 — Udvash Ad & Red Text Stream</option>
+        </select>
+        <div class="engine-desc" id="engineDesc">Interactive spectrum based on color and brightness.</div>
+      </div>
+
+      <!-- Live Interactive Controls (Shown for M1) -->
+      <div class="panel" id="m1Controls">
+        <div class="panel-header">Live Tuning Parameters</div>
+        
+        <div class="control-group">
+          <label>Min Brightness: <span id="valMinBr" class="val-pill">185</span></label>
+          <input type="range" id="minBrightness" min="0" max="255" value="185" class="slider">
+        </div>
+
+        <div class="control-group">
+          <label>Max Brightness: <span id="valMaxBr" class="val-pill">245</span></label>
+          <input type="range" id="maxBrightness" min="0" max="255" value="245" class="slider">
+        </div>
+
+        <div class="control-group">
+          <label>Color Match Tolerance: <span id="valTol" class="val-pill">40</span></label>
+          <input type="range" id="tolerance" min="0" max="150" value="40" class="slider">
+        </div>
+
+        <div class="control-group">
+          <label>Target Color (Hex):</label>
+          <div class="color-picker-row">
+            <input type="color" id="targetColorPicker" value="#d8d8d8" class="color-box">
+            <input type="text" id="targetColorHex" value="#d8d8d8" class="hex-input">
+          </div>
+        </div>
+
+        <div class="panel-sub-header">Safety Margins (% of Page)</div>
+        <div class="margin-grid">
+          <div>
+            <label>Top</label>
+            <input type="number" id="mTop" value="0" min="0" max="50" class="num-input">
+          </div>
+          <div>
+            <label>Bottom</label>
+            <input type="number" id="mBottom" value="0" min="0" max="50" class="num-input">
+          </div>
+          <div>
+            <label>Left</label>
+            <input type="number" id="mLeft" value="0" min="0" max="50" class="num-input">
+          </div>
+          <div>
+            <label>Right</label>
+            <input type="number" id="mRight" value="0" min="0" max="50" class="num-input">
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Button -->
+      <button class="btn btn-primary" id="btnExportPdf" disabled>
+        ⚡ Clean Entire PDF
+      </button>
+
+      <div id="exportStatus" class="status-msg"></div>
+
+    </aside>
+
+    <!-- Center Preview Canvas Area -->
+    <section class="preview-area">
+      
+      <!-- Top Canvas Toolbar -->
+      <div class="canvas-bar">
+        <div class="page-controls">
+          <button class="btn-sm" id="btnPrevPage">◀</button>
+          <span id="pageIndicator" class="page-text">Page 1 / 1</span>
+          <button class="btn-sm" id="btnNextPage">▶</button>
+        </div>
+
+        <div class="view-toggle">
+          <button class="toggle-btn active" id="tabCleaned">Live Cleaned</button>
+          <button class="toggle-btn" id="tabOriginal">Original</button>
+        </div>
+      </div>
+
+      <!-- Preview Image Display -->
+      <div class="viewport" id="viewport">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-icon">📖</div>
+          <h3>Upload a PDF to view preview</h3>
+          <p>Instantaneous real-time preview powered by Python PyMuPDF.</p>
+        </div>
+        <img id="previewImg" class="preview-img" style="display:none;" alt="PDF Preview">
+      </div>
+
+    </section>
+
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
