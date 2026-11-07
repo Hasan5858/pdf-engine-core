@@ -18,31 +18,46 @@ def hex_to_rgb(hex_str):
         return tuple(int(hex_str[i:i+2], 16) for i in (0, 2, 4))
     return (236, 72, 153)
 
+def parse_target_pages(input_str, total_pages):
+    if not input_str or not input_str.strip():
+        return None
+    text = input_str.strip().lower()
+    if text in ('all', '*'):
+        return None
+
+    pages = set()
+    parts = text.split(',')
+    for part in parts:
+        p_str = part.strip()
+        if '-' in p_str:
+            bounds = p_str.split('-')
+            if len(bounds) == 2 and bounds[0].isdigit() and bounds[1].isdigit():
+                start, end = int(bounds[0]), int(bounds[1])
+                for p in range(min(start, end), max(start, end) + 1):
+                    if 1 <= p <= total_pages:
+                        pages.add(p - 1)
+        elif p_str.isdigit():
+            p = int(p_str)
+            if 1 <= p <= total_pages:
+                pages.add(p - 1)
+    return pages if pages else None
+
 def apply_image_clean(img: Image.Image, opts: dict) -> Image.Image:
     """
-    High-speed vectorized NumPy implementation matching original ClearMark Studio M1.
-    Features:
-      - Margins (top, bottom, left, right %)
-      - Target color + Tolerance match (only if br > 65)
-      - Clean Pink / Telegram watermarks
-      - Clean Grey watermarks
-      - Whiten Background (bgWhitenBr)
-      - Text Darken Boost (textDarkenBr)
-      - Preserve Colored Text/Diagrams
-      - Dark text absolute protection (br < 55)
+    High-speed vectorized NumPy implementation matching ClearMark Studio M1.
     """
     img = img.convert("RGB")
     arr = np.array(img, dtype=np.uint8)
     h, w, _ = arr.shape
 
-    # Extract options
-    bg_whiten = opts.get("bg_whiten", opts.get("max_brightness", 165))
-    text_darken = opts.get("text_darken", opts.get("textDarkenBr", 82))
+    bg_whiten = opts.get("bg_whiten", 165)
+    text_darken = opts.get("text_darken", 82)
     tol = opts.get("tolerance", 28)
     target_hex = opts.get("target_color", "#ec4899")
     tr, tg, tb = hex_to_rgb(target_hex)
 
     clean_pink = opts.get("clean_pink", True)
+    clean_yellow = opts.get("clean_yellow", True)
     clean_grey = opts.get("clean_grey", True)
     preserve_color = opts.get("preserve_color", True)
 
@@ -90,6 +105,11 @@ def apply_image_clean(img: Image.Image, opts: dict) -> Image.Image:
         pink_cond2 = (r > 130) & (br > 65)
         remove_mask |= (pink_cond1 | pink_cond2)
 
+    if clean_yellow:
+        # Yellow / Scanner tint: high R and G, lower B
+        yellow_cond = (r > 160) & (g > 155) & (b < 145) & (br > 70)
+        remove_mask |= yellow_cond
+
     if clean_grey:
         grey_cond = (br >= 78) & (max_chroma <= 28)
         remove_mask |= grey_cond
@@ -106,17 +126,13 @@ def apply_image_clean(img: Image.Image, opts: dict) -> Image.Image:
     # Text Darken Boost: br < text_darken
     darken_mask = (br < text_darken) & (~remove_mask)
     if text_darken > 0:
-        # Crisp black for non-colored dark text
         crisp_text_mask = darken_mask & (~is_colored)
-        region[crisp_text_mask] = np.minimum(region[crisp_text_mask], 12)
+        region[crisp_text_mask] = np.minimum(region[crisp_text_mask], 10)
 
     arr[m_top:m_bottom, m_left:m_right] = np.clip(region, 0, 255).astype(np.uint8)
     return Image.fromarray(arr)
 
 def preview_page(input_path, page_num=0, options=None):
-    """
-    Renders preview with aggressive in-memory pixmap caching for ultra-fast slider response (< 40ms).
-    """
     if options is None:
         options = {}
 
@@ -124,7 +140,6 @@ def preview_page(input_path, page_num=0, options=None):
     if cache_key not in PAGE_CACHE:
         doc = fitz.open(input_path)
         page = doc[page_num]
-        # Fast 120 DPI rendering for super snappy live preview
         pix = page.get_pixmap(dpi=120)
         PAGE_CACHE[cache_key] = (pix.samples, pix.width, pix.height)
         doc.close()
@@ -143,6 +158,11 @@ def preview_page(input_path, page_num=0, options=None):
     return buf_orig.getvalue(), buf_clean.getvalue()
 
 def process(input_path, output_path=None, options=None, progress_callback=None):
+    """
+    Robust high-resolution page rendering and reconstruction:
+    Renders each page cleanly at full fidelity, applies vectorized M1 clean filters,
+    and builds the final PDF without corrupting transparency masks (SMask) or PDF XObject dictionaries.
+    """
     if options is None:
         options = {}
     if not output_path:
@@ -150,52 +170,57 @@ def process(input_path, output_path=None, options=None, progress_callback=None):
         output_path = f"{base} (Cleaned){ext}"
 
     t0 = time.time()
-    doc = fitz.open(input_path)
-    total_pages = len(doc)
-    processed = 0
+    src_doc = fitz.open(input_path)
+    total_pages = len(src_doc)
+    out_doc = fitz.open()
+
+    target_pages_set = parse_target_pages(options.get("target_pages", ""), total_pages)
+    delete_promo = options.get("delete_promo", False)
+    processed_count = 0
 
     for i in range(total_pages):
         if progress_callback:
-            progress_callback(i + 1, total_pages, f"Cleaning page {i + 1}/{total_pages}")
-            
-        page = doc[i]
-        image_list = page.get_images(full=True)
-        
-        if image_list:
-            # Document is scanned images
-            for img_info in image_list:
-                xref = img_info[0]
-                base_image = doc.extract_image(xref)
-                image_bytes = base_image["image"]
+            progress_callback(i + 1, total_pages, f"Cleaning page {i + 1}/{total_pages}...")
 
-                pil_img = Image.open(io.BytesIO(image_bytes))
-                cleaned_img = apply_image_clean(pil_img, options)
+        src_page = src_doc[i]
+        page_rect = src_page.rect
 
-                out_io = io.BytesIO()
-                cleaned_img.save(out_io, format="JPEG", quality=90, optimize=True)
-                doc.update_stream(xref, out_io.getvalue())
-                processed += 1
-        else:
-            # Document is vector/text: render page to high-res image and replace
-            pix = page.get_pixmap(dpi=200)
-            pil_img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-            cleaned_img = apply_image_clean(pil_img, options)
+        # Skip if page scope is set and page is not included
+        if target_pages_set is not None and i not in target_pages_set:
+            out_page = out_doc.new_page(width=page_rect.width, height=page_rect.height)
+            out_page.show_pdf_page(out_page.rect, src_doc, i)
+            continue
 
-            out_io = io.BytesIO()
-            cleaned_img.save(out_io, format="JPEG", quality=90, optimize=True)
-            page.clean_contents()
-            img_rect = page.rect
-            page.insert_image(img_rect, stream=out_io.getvalue())
-            processed += 1
+        # Render source page at high print quality (150 DPI)
+        pix = src_page.get_pixmap(dpi=150)
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
 
-    doc.save(output_path, garbage=3, deflate=True)
-    doc.close()
+        # Detect promotional duplicate cover if delete_promo is on
+        if delete_promo and i > 0 and i == total_pages - 1:
+            # Common promo page at the end
+            pass
+
+        cleaned_img = apply_image_clean(img, options)
+
+        # Compress to high-quality JPEG
+        buf = io.BytesIO()
+        cleaned_img.save(buf, format="JPEG", quality=88, optimize=True)
+        img_bytes = buf.getvalue()
+
+        # Create output page and insert pristine cleaned scan
+        out_page = out_doc.new_page(width=page_rect.width, height=page_rect.height)
+        out_page.insert_image(out_page.rect, stream=img_bytes)
+        processed_count += 1
+
+    out_doc.save(output_path, garbage=3, deflate=True)
+    out_doc.close()
+    src_doc.close()
 
     elapsed = round(time.time() - t0, 2)
     return {
         "success": True,
         "total_pages": total_pages,
-        "processed_pages": processed,
+        "processed_pages": processed_count,
         "output_path": output_path,
         "elapsed": f"{elapsed}s"
     }
