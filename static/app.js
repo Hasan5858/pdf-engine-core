@@ -14,6 +14,7 @@ const engineDesc = document.getElementById("engineDesc");
 const m1Controls = document.getElementById("m1Controls");
 const btnExportPdf = document.getElementById("btnExportPdf");
 const exportStatus = document.getElementById("exportStatus");
+const targetPagesInput = document.getElementById("targetPagesInput");
 
 const progressContainer = document.getElementById("progressContainer");
 const progressBarFill = document.getElementById("progressBarFill");
@@ -45,6 +46,7 @@ const chkCleanPink = document.getElementById("chkCleanPink");
 const chkCleanYellow = document.getElementById("chkCleanYellow");
 const chkCleanGrey = document.getElementById("chkCleanGrey");
 const chkPreserveColor = document.getElementById("chkPreserveColor");
+const chkDeletePromo = document.getElementById("chkDeletePromo");
 
 const btnPrevPage = document.getElementById("btnPrevPage");
 const btnNextPage = document.getElementById("btnNextPage");
@@ -161,7 +163,7 @@ previewCanvas.addEventListener("click", (e) => {
   schedulePreview();
 });
 
-[chkCleanPink, chkCleanYellow, chkCleanGrey, chkPreserveColor].forEach(chk => {
+[chkCleanPink, chkCleanYellow, chkCleanGrey, chkPreserveColor, chkDeletePromo].forEach(chk => {
   chk.addEventListener("change", schedulePreview);
 });
 
@@ -173,7 +175,7 @@ function schedulePreview() {
 function getOptions() {
   const topPct = parseFloat(sliderTopCrop.value) || 0;
   const bottomVal = parseFloat(sliderBottomCrop.value) || 100;
-  const bottomPct = 100 - bottomVal; // convert 91.5% mark to 8.5% margin
+  const bottomPct = 100 - bottomVal;
   const sidePct = parseFloat(sliderSideCrop.value) || 0;
 
   return {
@@ -188,7 +190,9 @@ function getOptions() {
     clean_pink: chkCleanPink.checked,
     clean_yellow: chkCleanYellow.checked,
     clean_grey: chkCleanGrey.checked,
-    preserve_color: chkPreserveColor.checked
+    preserve_color: chkPreserveColor.checked,
+    delete_promo: chkDeletePromo.checked,
+    target_pages: targetPagesInput.value.trim()
   };
 }
 

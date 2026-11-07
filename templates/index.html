@@ -36,7 +36,7 @@
     <aside class="sidebar">
       
       <!-- Upload Box -->
-      <div class="panel upload-panel" id="dropZone">
+      <div class="upload-panel" id="dropZone">
         <input type="file" id="pdfFileInput" accept="application/pdf" style="display:none;">
         <div class="upload-icon">📄</div>
         <div class="upload-title" id="uploadFilename">Click or Drag PDF Here</div>
@@ -137,30 +137,41 @@
 
           <label class="toggle-row">
             <span>Purge Pink / Coral Watermarks</span>
-            <input type="checkbox" id="chkCleanPink" checked class="switch-checkbox">
+            <input type="checkbox" id="chkCleanPink" checked class="ios-switch">
           </label>
 
           <label class="toggle-row">
             <span>Purge Yellow / Scanner Tint</span>
-            <input type="checkbox" id="chkCleanYellow" checked class="switch-checkbox">
+            <input type="checkbox" id="chkCleanYellow" checked class="ios-switch">
           </label>
 
           <label class="toggle-row">
             <span>Purge Grey Diagonal Logos</span>
-            <input type="checkbox" id="chkCleanGrey" checked class="switch-checkbox">
+            <input type="checkbox" id="chkCleanGrey" checked class="ios-switch">
           </label>
 
           <label class="toggle-row">
             <span>Preserve Colors (Prevent B&amp;W)</span>
-            <input type="checkbox" id="chkPreserveColor" checked class="switch-checkbox">
+            <input type="checkbox" id="chkPreserveColor" checked class="ios-switch">
+          </label>
+
+          <label class="toggle-row">
+            <span>Auto-delete Promo Ad Pages</span>
+            <input type="checkbox" id="chkDeletePromo" class="ios-switch">
           </label>
         </div>
 
       </div>
 
+      <!-- Page Scope -->
+      <div class="scope-group">
+        <label class="scope-label">Page Scope</label>
+        <input type="text" id="targetPagesInput" class="scope-input" placeholder="All pages (or e.g. 1-10, 15)">
+      </div>
+
       <!-- Action Button & Progress Tracker -->
       <button class="btn btn-primary" id="btnExportPdf" disabled>
-        ⚡ Clean Entire PDF
+        📥 Apply &amp; Export Cleaned PDF
       </button>
 
       <!-- Progress Container -->
