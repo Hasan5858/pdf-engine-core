@@ -112,7 +112,7 @@ def erase_pill_watermarks_worker(arr):
             boxH = dy
 
             aspect = boxW / boxH
-            if aspect < 4.8 or aspect > 6.6: continue
+            if aspect < 4.8 or aspect > 7.4: continue
 
             # Outline thinness check
             sampleX = round(boxX1 + boxW * 0.5)
@@ -139,14 +139,14 @@ def erase_pill_watermarks_worker(arr):
 
             # Vertical separator bar inside left section
             minBarX = boxX1 + int(boxW * 0.12)
-            maxBarX = boxX1 + int(boxW * 0.25)
+            maxBarX = boxX1 + int(boxW * 0.28)
             foundBar = False
             barX = 0
             for sx in range(minBarX, maxBarX + 1):
                 hits = 0
                 for sy in range(topL['y'] + 3, btmL['y'] - 3):
                     if br[sy, sx] < 140: hits += 1
-                if hits >= (boxH - 6) * 0.55:
+                if hits >= (boxH - 6) * 0.45:
                     barExt = 0
                     for ey in range(max(0, topL['y'] - 8), topL['y'] - 2):
                         if br[ey, sx] < 150: barExt += 1
@@ -159,18 +159,18 @@ def erase_pill_watermarks_worker(arr):
             if not foundBar: continue
 
             iconW = barX - boxX1
-            if iconW < 12 or iconW > 35: continue
+            if iconW < 12 or iconW > 65: continue
             circleDark = 0
             for y in range(topL['y'] + 2, btmL['y'] - 2):
                 for x in range(boxX1 + 2, barX - 1):
                     if br[y, x] < 150: circleDark += 1
-            minDarkIcon = max(25, round(boxH * boxH * 0.08))
+            minDarkIcon = max(25, round(boxH * boxH * 0.05))
             if circleDark < minDarkIcon: continue
 
             leftBorderHits = 0
             midY = round(topL['y'] + boxH * 0.5)
-            for y in range(midY - 3, midY + 4):
-                for x in range(boxX1 - 2, boxX1 + 5):
+            for y in range(midY - 4, midY + 5):
+                for x in range(boxX1 - 2, boxX1 + 6):
                     if br[y, x] < 160:
                         leftBorderHits += 1
                         break
