@@ -63,7 +63,10 @@ def apply_image_clean(img: Image.Image, opts: dict) -> Image.Image:
 
     # Margins
     m_top = int(h * (opts.get("margin_top", 4.6) / 100.0))
-    m_bottom = int(h * (1.0 - (opts.get("margin_bottom", 8.5) / 100.0)))
+    raw_btm = opts.get("margin_bottom", 91.5)
+    if raw_btm < 50.0:
+        raw_btm = 100.0 - raw_btm
+    m_bottom = int(h * (raw_btm / 100.0))
     m_left = int(w * (opts.get("margin_left", 3.8) / 100.0))
     m_right = int(w * (1.0 - (opts.get("margin_right", 3.8) / 100.0)))
 

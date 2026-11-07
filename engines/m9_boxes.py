@@ -318,7 +318,10 @@ def apply_acs_clean(img: Image.Image, opts: dict) -> Image.Image:
 
     # Margins (M9 defaults to 0% crop unless user adjusts sliders)
     m_top = int(h * (opts.get("margin_top", 0.0) / 100.0))
-    m_bottom = int(h * (opts.get("margin_bottom", 100.0) / 100.0))
+    raw_btm = opts.get("margin_bottom", 100.0)
+    if raw_btm < 50.0:
+        raw_btm = 100.0 - raw_btm
+    m_bottom = int(h * (raw_btm / 100.0))
     m_left = int(w * (opts.get("margin_sides", 0.0) / 100.0))
     m_right = int(w * (1.0 - (opts.get("margin_sides", 0.0) / 100.0)))
 

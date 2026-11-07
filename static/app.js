@@ -223,16 +223,16 @@ function schedulePreview() {
 }
 
 function getOptions() {
-  const topPct = parseFloat(sliderTopCrop.value) || 0;
-  const bottomVal = parseFloat(sliderBottomCrop.value) || 100;
-  const bottomPct = 100 - bottomVal;
-  const sidePct = parseFloat(sliderSideCrop.value) || 0;
+  const topPct = parseFloat(sliderTopCrop.value) || 0.0;
+  const bottomVal = parseFloat(sliderBottomCrop.value) || 100.0;
+  const sidePct = parseFloat(sliderSideCrop.value) || 0.0;
 
   return {
     margin_top: topPct,
-    margin_bottom: bottomPct,
+    margin_bottom: bottomVal,
     margin_left: sidePct,
     margin_right: sidePct,
+    margin_sides: sidePct,
     tolerance: parseInt(sliderTolerance.value) || 0,
     target_color: targetColorPicker.value || "#ec4899",
     bg_whiten: parseInt(sliderWhiten.value) || 165,
