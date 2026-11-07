@@ -4,10 +4,9 @@ import json
 import base64
 import threading
 import webbrowser
+import time
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import urllib.parse
-import tempfile
-import cgi
 
 # Add directory to sys.path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -22,7 +21,6 @@ TOTAL_PAGES = 0
 
 class AppRequestHandler(SimpleHTTPRequestHandler):
     def translate_path(self, path):
-        # Serve static assets
         clean_path = urllib.parse.urlparse(path).path
         if clean_path.startswith("/static/"):
             return os.path.join(BASE_DIR, clean_path.lstrip("/"))
@@ -65,37 +63,62 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
         url = urllib.parse.urlparse(self.path)
 
         if url.path == "/api/upload":
-            content_type = self.headers.get('Content-Type')
-            if not content_type or not content_type.startswith('multipart/form-data'):
-                self._send_json({"error": "Expected multipart/form-data"}, status=400)
+            content_type = self.headers.get('Content-Type', '')
+            if 'boundary=' not in content_type:
+                self._send_json({"error": "Missing multipart boundary"}, status=400)
                 return
 
-            form = cgi.FieldStorage(
-                fp=self.rfile,
-                headers=self.headers,
-                environ={'REQUEST_METHOD': 'POST', 'CONTENT_TYPE': content_type}
-            )
+            boundary = content_type.split("boundary=")[1].strip()
+            if boundary.startswith('"') and boundary.endswith('"'):
+                boundary = boundary[1:-1]
+            boundary_bytes = ('--' + boundary).encode('latin-1')
 
-            file_item = form['file']
-            if file_item.file:
-                tmp_dir = os.path.join(BASE_DIR, "tmp")
-                os.makedirs(tmp_dir, exist_ok=True)
-                target_path = os.path.join(tmp_dir, file_item.filename)
-                with open(target_path, "wb") as f_out:
-                    f_out.write(file_item.file.read())
-                
-                ACTIVE_PDF_PATH = target_path
-                import fitz
-                doc = fitz.open(ACTIVE_PDF_PATH)
-                TOTAL_PAGES = len(doc)
-                doc.close()
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length)
 
-                self._send_json({
-                    "success": True,
-                    "filename": file_item.filename,
-                    "pages": TOTAL_PAGES
-                })
+            # Fast binary parsing of multipart form-data (Python 3.13/3.14 compatible)
+            parts = body.split(boundary_bytes)
+            uploaded_filename = "document.pdf"
+            file_data = None
+
+            for part in parts:
+                if b'Content-Disposition:' in part and b'filename=' in part:
+                    header_part, content = part.split(b'\r\n\r\n', 1)
+                    content = content.rstrip(b'\r\n')
+                    
+                    # Extract filename
+                    for line in header_part.split(b'\r\n'):
+                        if b'filename=' in line:
+                            fn_str = line.decode('utf-8', errors='ignore')
+                            if 'filename="' in fn_str:
+                                uploaded_filename = fn_str.split('filename="')[1].split('"')[0]
+                            break
+                    file_data = content
+                    break
+
+            if not file_data:
+                self._send_json({"error": "No file content received"}, status=400)
                 return
+
+            tmp_dir = os.path.join(BASE_DIR, "tmp")
+            os.makedirs(tmp_dir, exist_ok=True)
+            target_path = os.path.join(tmp_dir, os.path.basename(uploaded_filename))
+
+            with open(target_path, "wb") as f_out:
+                f_out.write(file_data)
+
+            ACTIVE_PDF_PATH = target_path
+            import fitz
+            doc = fitz.open(ACTIVE_PDF_PATH)
+            TOTAL_PAGES = len(doc)
+            doc.close()
+
+            self._send_json({
+                "success": True,
+                "filename": uploaded_filename,
+                "pages": TOTAL_PAGES
+            })
+            return
 
         if url.path == "/api/preview":
             length = int(self.headers.get('Content-Length', 0))
@@ -152,32 +175,21 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
 def run_server():
     server = HTTPServer(('127.0.0.1', PORT), AppRequestHandler)
     print(f"==================================================")
-    print(f" PDF Cleaner Studio — Desktop Engine Running")
-    print(f" URL: http://127.0.0.1:{PORT}")
+    print(f" PDF Cleaner Studio — Engine Running")
+    print(f" Open in Browser: http://127.0.0.1:{PORT}")
     print(f"==================================================")
     server.serve_forever()
 
 if __name__ == "__main__":
     t = threading.Thread(target=run_server, daemon=True)
     t.start()
-    time_wait = 1
-    # Check if pywebview is available for desktop app shell
+    time.sleep(1)
+    
+    # Auto-open browser
+    webbrowser.open(f"http://127.0.0.1:{PORT}")
+    
     try:
-        import webview
-        webview.create_window(
-            "ClearMark Studio Desktop",
-            f"http://127.0.0.1:{PORT}",
-            width=1280,
-            height=850,
-            resizable=True
-        )
-        webview.start()
-    except ImportError:
-        # Fallback to standard browser window seamlessly!
-        webbrowser.open(f"http://127.0.0.1:{PORT}")
-        try:
-            while True:
-                import time
-                time.sleep(1)
-        except KeyboardInterrupt:
-            print("\nShutting down studio engine.")
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nShutting down studio engine.")
