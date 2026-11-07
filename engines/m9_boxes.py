@@ -5,6 +5,7 @@ import io
 import fitz  # PyMuPDF
 from PIL import Image
 import numpy as np
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 NAME = "Profile 9 — ACS Deep 2nd-Pass Clean Engine"
 DESCRIPTION = "Preserves 100% full-margin layout (0% crop) while erasing dark watermark stamps, Telegram pill badges, and purging promotional ad pages."
@@ -65,7 +66,8 @@ def erase_pill_watermarks_worker(arr):
     maxDy = round(h * 0.035)
 
     hLines = []
-    for y in range(int(h * 0.03), int(h * 0.97)):
+    # Stepping by 2 gives 2x speedup while easily capturing all 3-5px border lines
+    for y in range(int(h * 0.03), int(h * 0.97), 2):
         run = 0
         startX = 0
         row = br[y, :]
@@ -84,7 +86,7 @@ def erase_pill_watermarks_worker(arr):
     for l in hLines:
         merged = False
         for m in mergedHLines:
-            if abs(l['y'] - m['y']) <= 4 and abs(l['startX'] - m['startX']) < 30 and abs(l['len'] - m['len']) < 30:
+            if abs(l['y'] - m['y']) <= 5 and abs(l['startX'] - m['startX']) < 30 and abs(l['len'] - m['len']) < 30:
                 m['y'] = min(m['y'], l['y'])
                 m['startX'] = min(m['startX'], l['startX'])
                 m['endX'] = max(m['endX'], l['endX'])
@@ -434,6 +436,24 @@ def preview_page(input_path, page_num=0, options=None):
 
     return buf_orig.getvalue(), buf_clean.getvalue()
 
+def _clean_m9_page_task(args):
+    """
+    Multiprocessing top-level worker task.
+    Takes full advantage of all CPU cores (M4 / 16-thread PCs).
+    """
+    path, page_idx, opts = args
+    doc = fitz.open(path)
+    page = doc[page_idx]
+    rect = (page.rect.width, page.rect.height)
+    pix = page.get_pixmap(dpi=150)
+    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    doc.close()
+
+    cleaned = apply_acs_clean(img, opts)
+    buf = io.BytesIO()
+    cleaned.save(buf, format="JPEG", quality=88)
+    return page_idx, rect, buf.getvalue()
+
 def process(input_path, output_path=None, options=None, progress_callback=None):
     if options is None:
         options = {}
@@ -444,7 +464,6 @@ def process(input_path, output_path=None, options=None, progress_callback=None):
     t0 = time.time()
     src_doc = fitz.open(input_path)
     total_pages = len(src_doc)
-    out_doc = fitz.open()
 
     target_pages_set = parse_target_pages(options.get("target_pages", ""), total_pages)
     delete_promo = options.get("delete_promo", False)
@@ -456,14 +475,12 @@ def process(input_path, output_path=None, options=None, progress_callback=None):
         p0_sig = bytes(p0_pix.samples)
 
     promo_removed = []
-    processed_count = 0
+    pages_to_clean = []
+    untouched_pages = {}
 
     for i in range(total_pages):
-        if progress_callback:
-            progress_callback(i + 1, total_pages, f"M9 Deep Cleaning page {i + 1}/{total_pages}...")
-
         src_page = src_doc[i]
-        page_rect = src_page.rect
+        page_rect = (src_page.rect.width, src_page.rect.height)
 
         # Promo page check
         if delete_promo and is_promotional_page(src_page, p0_sig, i):
@@ -471,22 +488,48 @@ def process(input_path, output_path=None, options=None, progress_callback=None):
             continue
 
         if target_pages_set is not None and i not in target_pages_set:
-            out_page = out_doc.new_page(width=page_rect.width, height=page_rect.height)
-            out_page.show_pdf_page(out_page.rect, src_doc, i)
+            untouched_pages[i] = page_rect
             continue
 
-        pix = src_page.get_pixmap(dpi=150)
-        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        pages_to_clean.append(i)
 
-        cleaned_img = apply_acs_clean(img, options)
+    src_doc.close()
 
-        buf = io.BytesIO()
-        cleaned_img.save(buf, format="JPEG", quality=88, optimize=True)
-        img_bytes = buf.getvalue()
+    # Maximum CPU utilization across all cores
+    num_cores = os.cpu_count() or 4
+    tasks = [(input_path, idx, options) for idx in pages_to_clean]
+    cleaned_results = {}
+    completed_so_far = 0
+    total_work = len(tasks)
 
-        out_page = out_doc.new_page(width=page_rect.width, height=page_rect.height)
-        out_page.insert_image(out_page.rect, stream=img_bytes)
-        processed_count += 1
+    if progress_callback:
+        progress_callback(0, total_work or 1, f"Accelerating across {num_cores} CPU cores...")
+
+    if tasks:
+        with ProcessPoolExecutor(max_workers=num_cores) as executor:
+            futures = {executor.submit(_clean_m9_page_task, t): t[1] for t in tasks}
+            for fut in as_completed(futures):
+                p_idx, rect, img_bytes = fut.result()
+                cleaned_results[p_idx] = (rect, img_bytes)
+                completed_so_far += 1
+                if progress_callback:
+                    progress_callback(completed_so_far, total_work, f"M9 Cleaned {completed_so_far}/{total_work} pages ({num_cores} Cores Active)...")
+
+    # Assemble output document in original page order
+    src_doc = fitz.open(input_path)
+    out_doc = fitz.open()
+
+    for i in range(total_pages):
+        if i in promo_removed:
+            continue
+        if i in untouched_pages:
+            rect = untouched_pages[i]
+            out_page = out_doc.new_page(width=rect[0], height=rect[1])
+            out_page.show_pdf_page(out_page.rect, src_doc, i)
+        elif i in cleaned_results:
+            rect, img_bytes = cleaned_results[i]
+            out_page = out_doc.new_page(width=rect[0], height=rect[1])
+            out_page.insert_image(out_page.rect, stream=img_bytes)
 
     out_doc.save(output_path, garbage=3, deflate=True)
     out_doc.close()
@@ -496,7 +539,7 @@ def process(input_path, output_path=None, options=None, progress_callback=None):
     return {
         "success": True,
         "total_pages": total_pages,
-        "processed_pages": processed_count,
+        "processed_pages": len(pages_to_clean),
         "promo_pages_removed": promo_removed,
         "output_path": output_path,
         "elapsed": f"{elapsed}s"
