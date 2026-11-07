@@ -9,10 +9,6 @@ NAME = "Profile 9 — Deep Structural Element & Box Eliminator"
 DESCRIPTION = "Removes thick bordered promotion stamp boxes, stubborn dark watermarks, and restores pure scan contents."
 
 def _erase_promo_boxes_and_watermarks(img: Image.Image) -> Image.Image:
-    """
-    Scans image for rectangular promo stamp boxes with thick dark outlines,
-    fills interior and border with white (255), and suppresses faint watermark pixels.
-    """
     img = img.convert("RGB")
     w, h = img.size
     pixels = img.load()
@@ -30,7 +26,7 @@ def _erase_promo_boxes_and_watermarks(img: Image.Image) -> Image.Image:
                     start_x = x
                 run += 1
             else:
-                if run >= 250:  # Wide horizontal line characteristic of promo boxes
+                if run >= 250:
                     h_lines.append((y, start_x, x, run))
                 run = 0
 
@@ -43,7 +39,7 @@ def _erase_promo_boxes_and_watermarks(img: Image.Image) -> Image.Image:
         max_x = h_lines[0][2]
         
         for y, sx, ex, _ in h_lines[1:]:
-            if y - max_y <= 60:  # Same box cluster
+            if y - max_y <= 60:
                 max_y = y
                 min_x = min(min_x, sx)
                 max_x = max(max_x, ex)
@@ -69,40 +65,38 @@ def _erase_promo_boxes_and_watermarks(img: Image.Image) -> Image.Image:
 
     return img
 
-def process(input_path, output_path=None, options=None):
+def process(input_path, output_path=None, options=None, progress_callback=None):
     if not output_path:
         base, ext = os.path.splitext(input_path)
         output_path = f"{base} (Cleaned){ext}"
 
     t0 = time.time()
     doc = fitz.open(input_path)
+    total_pages = len(doc)
     cleaned_pages = 0
 
-    for page_idx in range(len(doc)):
+    for page_idx in range(total_pages):
+        if progress_callback:
+            progress_callback(page_idx + 1, total_pages, f"Deep cleaning page {page_idx + 1}/{total_pages}")
+            
         page = doc[page_idx]
         image_list = page.get_images(full=True)
         
         if not image_list:
             continue
 
-        # Extract dominant scanned book image
         for img_info in image_list:
             xref = img_info[0]
             base_image = doc.extract_image(xref)
             image_bytes = base_image["image"]
-            ext = base_image["ext"]
 
             pil_img = Image.open(io.BytesIO(image_bytes))
             cleaned_img = _erase_promo_boxes_and_watermarks(pil_img)
 
-            # Re-compress cleanly into JPEG
             out_io = io.BytesIO()
             cleaned_img.save(out_io, format="JPEG", quality=90, optimize=True)
-            cleaned_bytes = out_io.getvalue()
-
-            # Update stream back into PDF object
             page.clean_contents()
-            doc.update_stream(xref, cleaned_bytes)
+            doc.update_stream(xref, out_io.getvalue())
             cleaned_pages += 1
 
     doc.save(output_path, garbage=3, deflate=True)
@@ -111,17 +105,8 @@ def process(input_path, output_path=None, options=None):
     elapsed = round(time.time() - t0, 2)
     return {
         "success": True,
-        "total_pages": len(doc) if 'doc' in locals() and not doc.is_closed else cleaned_pages,
+        "total_pages": total_pages,
         "cleaned_pages": cleaned_pages,
         "output_path": output_path,
         "elapsed": f"{elapsed}s"
     }
-
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python m9_boxes.py <input.pdf> [output.pdf]")
-        sys.exit(1)
-    inp = sys.argv[1]
-    out = sys.argv[2] if len(sys.argv) > 2 else None
-    res = process(inp, out)
-    print(res)

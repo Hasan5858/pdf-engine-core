@@ -51,7 +51,7 @@
           <option value="m9_boxes">M9 — ACS Box & Dark Stamp Purge</option>
           <option value="m13_stream">M13 — Udvash Ad & Red Text Stream</option>
         </select>
-        <div class="engine-desc" id="engineDesc">Interactive spectrum based on color and brightness.</div>
+        <div class="engine-desc" id="engineDesc">Interactive spectrum based on color and brightness with live real-time preview.</div>
       </div>
 
       <!-- Live Interactive Controls (Shown for M1) -->
@@ -102,10 +102,21 @@
         </div>
       </div>
 
-      <!-- Action Button -->
+      <!-- Action Button & Progress Tracker -->
       <button class="btn btn-primary" id="btnExportPdf" disabled>
         ⚡ Clean Entire PDF
       </button>
+
+      <!-- Progress Container -->
+      <div id="progressContainer" class="progress-container" style="display:none;">
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="progressBarFill" style="width: 0%;"></div>
+        </div>
+        <div class="progress-info">
+          <span id="progressText">Processing...</span>
+          <span id="progressPercent">0%</span>
+        </div>
+      </div>
 
       <div id="exportStatus" class="status-msg"></div>
 

@@ -15,15 +15,6 @@ def hex_to_rgb(hex_str):
     return (220, 220, 220)
 
 def apply_image_clean(img: Image.Image, opts: dict) -> Image.Image:
-    """
-    Cleans watermark pixels on a single PIL image based on interactive options:
-      - min_brightness (0..255)
-      - max_brightness (0..255)
-      - target_color (hex)
-      - tolerance (0..255)
-      - margins: top, bottom, left, right (in %)
-      - mode: 'brightness' or 'color'
-    """
     img = img.convert("RGB")
     w, h = img.size
     pixels = img.load()
@@ -49,7 +40,7 @@ def apply_image_clean(img: Image.Image, opts: dict) -> Image.Image:
                 dist = ((r - target_r)**2 + (g - target_g)**2 + (b - target_b)**2) ** 0.5
                 if dist <= tol:
                     pixels[x, y] = (255, 255, 255)
-            else:  # brightness mode
+            else:
                 br = (r * 299 + g * 587 + b * 114) / 1000
                 if min_br <= br <= max_br:
                     pixels[x, y] = (255, 255, 255)
@@ -57,9 +48,6 @@ def apply_image_clean(img: Image.Image, opts: dict) -> Image.Image:
     return img
 
 def preview_page(input_path, page_num=0, options=None):
-    """
-    Returns (orig_jpeg_bytes, cleaned_jpeg_bytes) for instantaneous live UI feedback.
-    """
     if options is None:
         options = {}
     doc = fitz.open(input_path)
@@ -77,7 +65,7 @@ def preview_page(input_path, page_num=0, options=None):
     doc.close()
     return buf_orig.getvalue(), buf_clean.getvalue()
 
-def process(input_path, output_path=None, options=None):
+def process(input_path, output_path=None, options=None, progress_callback=None):
     if options is None:
         options = {}
     if not output_path:
@@ -90,6 +78,9 @@ def process(input_path, output_path=None, options=None):
     processed = 0
 
     for i in range(total_pages):
+        if progress_callback:
+            progress_callback(i + 1, total_pages, f"Cleaning page {i + 1}/{total_pages}")
+            
         page = doc[i]
         image_list = page.get_images(full=True)
         if not image_list:

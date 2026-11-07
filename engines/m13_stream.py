@@ -6,7 +6,23 @@ import pypdf
 NAME = "Profile 13 — Dual Stream Red Watermark & Promo Purge"
 DESCRIPTION = "Removes full-page promotional covers and cleans red Telegram/URL watermark streams losslessly."
 
-def process(input_path, output_path=None, options=None):
+def _get_stream_data(contents):
+    """Safely extracts combined stream bytes whether contents is a single stream or an ArrayObject."""
+    if not contents:
+        return b""
+    c_obj = contents.get_object() if hasattr(contents, "get_object") else contents
+    if hasattr(c_obj, "get_data"):
+        return c_obj.get_data()
+    if isinstance(c_obj, (list, pypdf.generic.ArrayObject)):
+        combined = []
+        for item in c_obj:
+            sub_obj = item.get_object() if hasattr(item, "get_object") else item
+            if hasattr(sub_obj, "get_data"):
+                combined.append(sub_obj.get_data())
+        return b"\n".join(combined)
+    return b""
+
+def process(input_path, output_path=None, options=None, progress_callback=None):
     if not output_path:
         base, ext = os.path.splitext(input_path)
         output_path = f"{base} (Cleaned){ext}"
@@ -19,7 +35,7 @@ def process(input_path, output_path=None, options=None):
     
     # Signature of promotional page from page 1 (index 0)
     p0_contents = reader.pages[0].get('/Contents')
-    p0_data = p0_contents.get_object().get_data() if p0_contents else None
+    p0_data = _get_stream_data(p0_contents)
     
     clean_stream_data = (
         b"q\n"
@@ -35,12 +51,15 @@ def process(input_path, output_path=None, options=None):
     for i in range(total_pages):
         page = reader.pages[i]
         contents = page.get('/Contents')
+        
+        if progress_callback:
+            progress_callback(i + 1, total_pages, f"Analyzing page {i + 1}/{total_pages}")
+            
         if not contents:
             writer.add_page(page)
             continue
             
-        c_obj = contents.get_object()
-        data = c_obj.get_data()
+        data = _get_stream_data(contents)
         
         # 1. Check if it's the promotional duplicate page
         if i > 0 and p0_data and data == p0_data:
@@ -49,8 +68,19 @@ def process(input_path, output_path=None, options=None):
             
         # 2. Check if page contains red watermark text stream
         if b"Telegram : @PDFNexus" in data or b"https://t.me/PDFNexus" in data or b"/F1 18 Tf" in data:
-            c_obj.set_data(clean_stream_data)
-            cleaned_count += 1
+            c_obj = contents.get_object() if hasattr(contents, "get_object") else contents
+            if hasattr(c_obj, "set_data"):
+                c_obj.set_data(clean_stream_data)
+                cleaned_count += 1
+            elif isinstance(c_obj, (list, pypdf.generic.ArrayObject)):
+                # If array of streams, clean each stream that has the watermark
+                for item in c_obj:
+                    sub_obj = item.get_object() if hasattr(item, "get_object") else item
+                    if hasattr(sub_obj, "get_data"):
+                        sub_data = sub_obj.get_data()
+                        if b"Telegram" in sub_data or b"PDFNexus" in sub_data:
+                            sub_obj.set_data(b"")
+                cleaned_count += 1
             
         writer.add_page(page)
         
@@ -66,12 +96,3 @@ def process(input_path, output_path=None, options=None):
         "output_path": output_path,
         "elapsed": f"{elapsed}s"
     }
-
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python m13_stream.py <input.pdf> [output.pdf]")
-        sys.exit(1)
-    inp = sys.argv[1]
-    out = sys.argv[2] if len(sys.argv) > 2 else None
-    res = process(inp, out)
-    print(res)

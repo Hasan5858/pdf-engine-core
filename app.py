@@ -19,6 +19,17 @@ PORT = 7860
 ACTIVE_PDF_PATH = None
 TOTAL_PAGES = 0
 
+# Global progress state
+PROGRESS_STATE = {
+    "is_processing": False,
+    "current": 0,
+    "total": 0,
+    "percent": 0,
+    "status": "Idle",
+    "result": None,
+    "error": None
+}
+
 class AppRequestHandler(SimpleHTTPRequestHandler):
     def translate_path(self, path):
         clean_path = urllib.parse.urlparse(path).path
@@ -51,6 +62,10 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
             self._send_json(res)
             return
 
+        if url.path == "/api/progress":
+            self._send_json(PROGRESS_STATE)
+            return
+
         if url.path == "/api/check_update":
             update_res = check_and_apply_updates()
             self._send_json(update_res)
@@ -76,7 +91,6 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
             length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(length)
 
-            # Fast binary parsing of multipart form-data (Python 3.13/3.14 compatible)
             parts = body.split(boundary_bytes)
             uploaded_filename = "document.pdf"
             file_data = None
@@ -85,8 +99,6 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                 if b'Content-Disposition:' in part and b'filename=' in part:
                     header_part, content = part.split(b'\r\n\r\n', 1)
                     content = content.rstrip(b'\r\n')
-                    
-                    # Extract filename
                     for line in header_part.split(b'\r\n'):
                         if b'filename=' in line:
                             fn_str = line.decode('utf-8', errors='ignore')
@@ -154,13 +166,40 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": f"Engine {engine_id} not found"}, status=400)
                 return
 
-            engine = engines[engine_id]["module"]
-            base, ext = os.path.splitext(ACTIVE_PDF_PATH)
-            out_path = f"{base}_cleaned{ext}"
+            # Start processing in background thread with live progress tracking
+            def task():
+                global PROGRESS_STATE
+                PROGRESS_STATE["is_processing"] = True
+                PROGRESS_STATE["current"] = 0
+                PROGRESS_STATE["total"] = TOTAL_PAGES
+                PROGRESS_STATE["percent"] = 0
+                PROGRESS_STATE["status"] = "Initializing..."
+                PROGRESS_STATE["result"] = None
+                PROGRESS_STATE["error"] = None
 
-            result = engine.process(ACTIVE_PDF_PATH, out_path, options)
-            result["download_url"] = f"/api/download?path={urllib.parse.quote(out_path)}"
-            self._send_json(result)
+                def on_progress(cur, tot, status_text):
+                    PROGRESS_STATE["current"] = cur
+                    PROGRESS_STATE["total"] = tot
+                    PROGRESS_STATE["percent"] = int((cur / tot) * 100) if tot > 0 else 0
+                    PROGRESS_STATE["status"] = status_text
+
+                try:
+                    engine = engines[engine_id]["module"]
+                    base, ext = os.path.splitext(ACTIVE_PDF_PATH)
+                    out_path = f"{base}_cleaned{ext}"
+
+                    res = engine.process(ACTIVE_PDF_PATH, out_path, options, progress_callback=on_progress)
+                    PROGRESS_STATE["result"] = res
+                    PROGRESS_STATE["percent"] = 100
+                    PROGRESS_STATE["status"] = f"Complete in {res.get('elapsed', '0s')}!"
+                except Exception as e:
+                    PROGRESS_STATE["error"] = str(e)
+                    PROGRESS_STATE["status"] = f"Failed: {str(e)}"
+                finally:
+                    PROGRESS_STATE["is_processing"] = False
+
+            threading.Thread(target=task, daemon=True).start()
+            self._send_json({"started": True})
             return
 
         self.send_error(404)
@@ -185,7 +224,6 @@ if __name__ == "__main__":
     t.start()
     time.sleep(1)
     
-    # Auto-open browser
     webbrowser.open(f"http://127.0.0.1:{PORT}")
     
     try:

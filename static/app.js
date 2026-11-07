@@ -3,6 +3,7 @@ let totalPages = 1;
 let currentOrigUrl = null;
 let currentCleanUrl = null;
 let previewDebounce = null;
+let pollInterval = null;
 
 const dropZone = document.getElementById("dropZone");
 const fileInput = document.getElementById("pdfFileInput");
@@ -13,6 +14,11 @@ const engineDesc = document.getElementById("engineDesc");
 const m1Controls = document.getElementById("m1Controls");
 const btnExportPdf = document.getElementById("btnExportPdf");
 const exportStatus = document.getElementById("exportStatus");
+
+const progressContainer = document.getElementById("progressContainer");
+const progressBarFill = document.getElementById("progressBarFill");
+const progressText = document.getElementById("progressText");
+const progressPercent = document.getElementById("progressPercent");
 
 const minBr = document.getElementById("minBrightness");
 const maxBr = document.getElementById("maxBrightness");
@@ -39,7 +45,6 @@ const emptyState = document.getElementById("emptyState");
 const btnCheckUpdate = document.getElementById("btnCheckUpdate");
 const updateText = document.getElementById("updateText");
 
-// Initialize Dropzone
 dropZone.addEventListener("click", () => fileInput.click());
 dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.style.borderColor = "#3b82f6"; });
 dropZone.addEventListener("dragleave", () => { dropZone.style.borderColor = ""; });
@@ -94,7 +99,6 @@ function handleFileUpload(file) {
   });
 }
 
-// Engine selection logic
 engineSelector.addEventListener("change", () => {
   const mode = engineSelector.value;
   if (mode === "m1_live") {
@@ -109,7 +113,6 @@ engineSelector.addEventListener("change", () => {
   }
 });
 
-// Slider & Margin Bindings
 function bindSlider(slider, label) {
   slider.addEventListener("input", () => {
     label.textContent = slider.value;
@@ -156,7 +159,7 @@ function requestPreview() {
   fetch("/api/preview", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: jsonString({ page: currentPage, options: getOptions() })
+    body: JSON.stringify({ page: currentPage, options: getOptions() })
   })
   .then(res => res.json())
   .then(data => {
@@ -165,10 +168,6 @@ function requestPreview() {
     applyCurrentView();
   })
   .catch(console.error);
-}
-
-function jsonString(obj) {
-  return JSON.stringify(obj);
 }
 
 function applyCurrentView() {
@@ -191,7 +190,6 @@ tabOriginal.addEventListener("click", () => {
   applyCurrentView();
 });
 
-// Page Navigation
 btnPrevPage.addEventListener("click", () => {
   if (currentPage > 0) {
     currentPage--;
@@ -214,11 +212,14 @@ function updatePageNav() {
   btnNextPage.disabled = (currentPage >= totalPages - 1);
 }
 
-// Full PDF Export
+// Full PDF Export with Live Progress Bar
 btnExportPdf.addEventListener("click", () => {
   btnExportPdf.disabled = true;
-  exportStatus.textContent = "Processing entire PDF... please wait.";
-  exportStatus.style.color = "#3b82f6";
+  exportStatus.textContent = "";
+  progressContainer.style.display = "flex";
+  progressBarFill.style.width = "0%";
+  progressText.textContent = "Starting engine...";
+  progressPercent.textContent = "0%";
 
   const engineId = engineSelector.value;
   fetch("/api/process", {
@@ -231,21 +232,50 @@ btnExportPdf.addEventListener("click", () => {
   })
   .then(res => res.json())
   .then(data => {
-    btnExportPdf.disabled = false;
-    if (data.success) {
-      exportStatus.textContent = `Done in ${data.elapsed}! Saved to: ${data.output_path}`;
-      exportStatus.style.color = "#10b981";
+    if (data.started) {
+      startProgressPolling();
     } else {
-      exportStatus.textContent = "Error: " + (data.error || "Unknown error");
+      btnExportPdf.disabled = false;
+      progressContainer.style.display = "none";
+      exportStatus.textContent = "Failed to start: " + (data.error || "Unknown");
       exportStatus.style.color = "#ef4444";
     }
   })
   .catch(err => {
     btnExportPdf.disabled = false;
+    progressContainer.style.display = "none";
     exportStatus.textContent = "Processing failed.";
     exportStatus.style.color = "#ef4444";
   });
 });
+
+function startProgressPolling() {
+  if (pollInterval) clearInterval(pollInterval);
+  
+  pollInterval = setInterval(() => {
+    fetch("/api/progress")
+    .then(res => res.json())
+    .then(p => {
+      progressBarFill.style.width = p.percent + "%";
+      progressPercent.textContent = p.percent + "%";
+      progressText.textContent = p.status;
+
+      if (!p.is_processing) {
+        clearInterval(pollInterval);
+        btnExportPdf.disabled = false;
+        
+        if (p.result && p.result.success) {
+          exportStatus.textContent = `✅ Complete in ${p.result.elapsed}! Saved to: ${p.result.output_path}`;
+          exportStatus.style.color = "#10b981";
+        } else if (p.error) {
+          exportStatus.textContent = "❌ Error: " + p.error;
+          exportStatus.style.color = "#ef4444";
+        }
+      }
+    })
+    .catch(console.error);
+  }, 250);
+}
 
 // Update & Sync Checker
 btnCheckUpdate.addEventListener("click", () => {
