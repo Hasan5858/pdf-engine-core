@@ -156,6 +156,30 @@ def preview_page(input_path, page_num=0, options=None):
 
     return buf_orig.getvalue(), buf_clean.getvalue()
 
+def is_promotional_page(page, p0_sig=None, pno=0):
+    if pno == 0:
+        return False
+
+    # Check 1: Matching Page 1 cover signature
+    if p0_sig:
+        p_pix = page.get_pixmap(dpi=36)
+        if bytes(p_pix.samples) == p0_sig:
+            return True
+
+    # Check 2: Two large promo links covering the page (e.g. t.me/admission_stuffs + t.me/HSCStuffs)
+    links = page.get_links()
+    if len(links) >= 2:
+        large_promo_links = 0
+        for l in links:
+            uri = l.get('uri', '').lower()
+            rect = l.get('from')
+            if ('t.me' in uri or 'facebook' in uri or 'admission' in uri or 'hsc' in uri) and rect and rect.height > 120:
+                large_promo_links += 1
+        if large_promo_links >= 2:
+            return True
+
+    return False
+
 def process(input_path, output_path=None, options=None, progress_callback=None):
     if options is None:
         options = {}
@@ -187,13 +211,10 @@ def process(input_path, output_path=None, options=None, progress_callback=None):
         src_page = src_doc[i]
         page_rect = src_page.rect
 
-        # Check if page is an identical promotional ad duplicate
-        if delete_promo and p0_sig:
-            p_pix = src_page.get_pixmap(dpi=36)
-            if bytes(p_pix.samples) == p0_sig:
-                # Page 1 or duplicates (51, 101, 151, 198 etc.)
-                promo_removed.append(i + 1)
-                continue
+        # Check if page is an identical promotional ad duplicate or multi-link promo poster
+        if delete_promo and is_promotional_page(src_page, p0_sig, i):
+            promo_removed.append(i + 1)
+            continue
 
         # Skip if page scope is set and page is not included
         if target_pages_set is not None and i not in target_pages_set:

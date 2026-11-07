@@ -142,8 +142,14 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": "No PDF loaded"}, status=400)
                 return
 
-            from engines.m1_live import preview_page
-            orig_bytes, clean_bytes = preview_page(ACTIVE_PDF_PATH, page_num, options)
+            engine_id = data.get('engine', 'm1_live')
+            engines = get_available_engines()
+            target_engine = engines.get(engine_id, {}).get('module')
+            if target_engine and hasattr(target_engine, 'preview_page'):
+                orig_bytes, clean_bytes = target_engine.preview_page(ACTIVE_PDF_PATH, page_num, options)
+            else:
+                from engines.m1_live import preview_page
+                orig_bytes, clean_bytes = preview_page(ACTIVE_PDF_PATH, page_num, options)
 
             self._send_json({
                 "orig": "data:image/jpeg;base64," + base64.b64encode(orig_bytes).decode('ascii'),

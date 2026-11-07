@@ -250,7 +250,7 @@ function requestPreview() {
   fetch("/api/preview", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ page: currentPage, options: getOptions() })
+    body: JSON.stringify({ engine: engineSelector.value, page: currentPage, options: getOptions() })
   })
   .then(res => res.json())
   .then(data => {
