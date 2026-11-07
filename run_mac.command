@@ -8,6 +8,14 @@ echo "=================================================="
 echo " Starting ClearMark Studio (Mac)..."
 echo "=================================================="
 
+# Auto-update codebase from GitHub if Git is available
+if command -v git &> /dev/null && [ -d ".git" ]; then
+    echo "[INFO] Checking for updates from GitHub..."
+    git pull origin main --quiet
+    echo "[OK] Codebase is up to date!"
+    echo ""
+fi
+
 # Check if Python 3 is installed
 if ! command -v python3 &> /dev/null; then
     echo "Error: Python 3 not found. Please install Python 3."

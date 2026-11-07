@@ -7,7 +7,16 @@ echo   Starting ClearMark Studio for Windows...
 echo ==================================================
 echo.
 
-:: Check for Python installation
+:: Auto-update codebase from GitHub if Git is available
+where git >nul 2>&1
+if %errorlevel% equ 0 (
+    if exist ".git" (
+        echo [INFO] Checking for updates from GitHub...
+        git pull origin main --quiet
+        echo [OK] Codebase is up to date!
+        echo.
+    )
+)
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo [ERROR] Python is not installed or not in PATH!
