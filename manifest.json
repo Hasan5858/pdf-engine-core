@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "engines": [
+    {
+      "id": "m1_live",
+      "filename": "m1_live.py",
+      "version": "1.0.0"
+    },
+    {
+      "id": "m9_boxes",
+      "filename": "m9_boxes.py",
+      "version": "1.0.0"
+    },
+    {
+      "id": "m13_stream",
+      "filename": "m13_stream.py",
+      "version": "1.0.0"
+    }
+  ]
+}
