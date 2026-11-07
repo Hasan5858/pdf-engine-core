@@ -59,6 +59,51 @@ const emptyState = document.getElementById("emptyState");
 const btnCheckUpdate = document.getElementById("btnCheckUpdate");
 const updateText = document.getElementById("updateText");
 
+// Presets from Original Project
+const MODE_PRESETS = {
+  m1_live: {
+    topCropPct: 4.6, bottomCropPct: 91.5, sideCropPct: 3.8,
+    tolerance: 28, bgWhitenBr: 165, textDarkenBr: 82,
+    cleanPink: true, cleanYellow: true, cleanGrey: true, preserveColor: true,
+    deletePromo: false
+  },
+  m9_boxes: {
+    topCropPct: 0.0, bottomCropPct: 100.0, sideCropPct: 0.0,
+    tolerance: 0, bgWhitenBr: 165, textDarkenBr: 80,
+    cleanPink: true, cleanYellow: false, cleanGrey: true, preserveColor: true,
+    deletePromo: false
+  }
+};
+
+function applyPreset(preset) {
+  sliderTopCrop.value = preset.topCropPct;
+  valTopCrop.textContent = `${preset.topCropPct}%`;
+
+  sliderBottomCrop.value = preset.bottomCropPct;
+  valBottomCrop.textContent = `${preset.bottomCropPct}%`;
+
+  sliderSideCrop.value = preset.sideCropPct;
+  valSideCrop.textContent = `${preset.sideCropPct}%`;
+
+  sliderTolerance.value = preset.tolerance;
+  valTolerance.textContent = preset.tolerance;
+
+  sliderWhiten.value = preset.bgWhitenBr;
+  valWhiten.textContent = preset.bgWhitenBr;
+
+  sliderTextDarken.value = preset.textDarkenBr;
+  valTextDarken.textContent = preset.textDarkenBr;
+
+  chkCleanPink.checked = preset.cleanPink;
+  chkCleanYellow.checked = preset.cleanYellow;
+  chkCleanGrey.checked = preset.cleanGrey;
+  chkPreserveColor.checked = preset.preserveColor;
+  chkDeletePromo.checked = preset.deletePromo;
+
+  targetColorPicker.value = "#ec4899";
+  targetColorHex.textContent = "#EC4899";
+}
+
 dropZone.addEventListener("click", () => fileInput.click());
 dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.style.borderColor = "#38bdf8"; });
 dropZone.addEventListener("dragleave", () => { dropZone.style.borderColor = ""; });
@@ -113,17 +158,22 @@ function handleFileUpload(file) {
   });
 }
 
+// Engine selection logic: Now M1 and M9 BOTH have full controls enabled!
 engineSelector.addEventListener("change", () => {
   const mode = engineSelector.value;
   if (mode === "m1_live") {
     m1Controls.style.display = "block";
     engineDesc.textContent = "Interactive spectrum based on color and brightness with live real-time preview.";
+    applyPreset(MODE_PRESETS.m1_live);
+    schedulePreview();
   } else if (mode === "m9_boxes") {
-    m1Controls.style.display = "none";
-    engineDesc.textContent = "Profile 9: Automatic detection and erasure of thick promo boxes & dark stamps.";
+    m1Controls.style.display = "block"; // Full controls visible for M9 as well!
+    engineDesc.textContent = "M9 ACS Deep 2nd-Pass: Full-margin layout (0% crop), dark watermark suppression & text boost.";
+    applyPreset(MODE_PRESETS.m9_boxes);
+    schedulePreview();
   } else if (mode === "m13_stream") {
     m1Controls.style.display = "none";
-    engineDesc.textContent = "Profile 13: Instant lossless purge of duplicate ad pages & Telegram red watermark streams.";
+    engineDesc.textContent = "M13: Instant lossless purge of duplicate ad pages & Telegram red watermark streams.";
   }
 });
 
@@ -183,10 +233,10 @@ function getOptions() {
     margin_bottom: bottomPct,
     margin_left: sidePct,
     margin_right: sidePct,
-    tolerance: parseInt(sliderTolerance.value) || 28,
+    tolerance: parseInt(sliderTolerance.value) || 0,
     target_color: targetColorPicker.value || "#ec4899",
     bg_whiten: parseInt(sliderWhiten.value) || 165,
-    text_darken: parseInt(sliderTextDarken.value) || 82,
+    text_darken: parseInt(sliderTextDarken.value) || 80,
     clean_pink: chkCleanPink.checked,
     clean_yellow: chkCleanYellow.checked,
     clean_grey: chkCleanGrey.checked,
