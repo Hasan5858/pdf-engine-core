@@ -222,7 +222,7 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                     os.makedirs(tmp_dir, exist_ok=True)
                     orig_name = ACTIVE_PDF_ORIGINAL_FILENAME or "document.pdf"
                     base, ext = os.path.splitext(orig_name)
-                    out_path = os.path.join(tmp_dir, f"{base}_cleaned{ext}")
+                    out_path = os.path.join(tmp_dir, f"{base} [cleaned]{ext}")
 
                     res = engine.process(ACTIVE_PDF_PATH, out_path, options, progress_callback=on_progress)
                     PROGRESS_STATE["result"] = res

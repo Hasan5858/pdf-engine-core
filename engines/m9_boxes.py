@@ -459,7 +459,7 @@ def process(input_path, output_path=None, options=None, progress_callback=None):
         options = {}
     if not output_path:
         base, ext = os.path.splitext(input_path)
-        output_path = f"{base} (Cleaned){ext}"
+        output_path = f"{base} [cleaned]{ext}"
 
     t0 = time.time()
     src_doc = fitz.open(input_path)
