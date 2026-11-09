@@ -5,6 +5,7 @@ import base64
 import threading
 import webbrowser
 import time
+import tempfile
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import urllib.parse
 
@@ -17,6 +18,7 @@ from core.updater import check_and_apply_updates
 
 PORT = 7860
 ACTIVE_PDF_PATH = None
+ACTIVE_PDF_ORIGINAL_FILENAME = None
 TOTAL_PAGES = 0
 
 # Global progress state
@@ -56,7 +58,7 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                     {"id": k, "name": v["name"], "description": v["description"]}
                     for k, v in engines.items()
                 ],
-                "active_pdf": os.path.basename(ACTIVE_PDF_PATH) if ACTIVE_PDF_PATH else None,
+                "active_pdf": ACTIVE_PDF_ORIGINAL_FILENAME if ACTIVE_PDF_ORIGINAL_FILENAME else (os.path.basename(ACTIVE_PDF_PATH) if ACTIVE_PDF_PATH else None),
                 "total_pages": TOTAL_PAGES
             }
             self._send_json(res)
@@ -74,7 +76,7 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
-        global ACTIVE_PDF_PATH, TOTAL_PAGES
+        global ACTIVE_PDF_PATH, ACTIVE_PDF_ORIGINAL_FILENAME, TOTAL_PAGES
         url = urllib.parse.urlparse(self.path)
 
         if url.path == "/api/upload":
@@ -86,40 +88,65 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
             boundary = content_type.split("boundary=")[1].strip()
             if boundary.startswith('"') and boundary.endswith('"'):
                 boundary = boundary[1:-1]
-            boundary_bytes = ('--' + boundary).encode('latin-1')
+            boundary_marker = ('--' + boundary).encode('latin-1')
 
-            length = int(self.headers.get('Content-Length', 0))
-            body = self.rfile.read(length)
+            # Stream-read headers to find filename
+            headers = {}
+            line = self.rfile.readline()
+            while boundary_marker not in line and line:
+                line = self.rfile.readline()
 
-            parts = body.split(boundary_bytes)
-            uploaded_filename = "document.pdf"
-            file_data = None
-
-            for part in parts:
-                if b'Content-Disposition:' in part and b'filename=' in part:
-                    header_part, content = part.split(b'\r\n\r\n', 1)
-                    content = content.rstrip(b'\r\n')
-                    for line in header_part.split(b'\r\n'):
-                        if b'filename=' in line:
-                            fn_str = line.decode('utf-8', errors='ignore')
-                            if 'filename="' in fn_str:
-                                uploaded_filename = fn_str.split('filename="')[1].split('"')[0]
-                            break
-                    file_data = content
+            while True:
+                line = self.rfile.readline()
+                if line in (b'\r\n', b'\n', b''):
                     break
+                if b':' in line:
+                    k, v = line.split(b':', 1)
+                    headers[k.strip().lower()] = v.strip()
 
-            if not file_data:
-                self._send_json({"error": "No file content received"}, status=400)
-                return
+            cd = headers.get(b'content-disposition', b'').decode('utf-8', errors='ignore')
+            uploaded_filename = "document.pdf"
+            if 'filename="' in cd:
+                uploaded_filename = cd.split('filename="')[1].split('"')[0]
+            elif 'filename=' in cd:
+                uploaded_filename = cd.split('filename=')[1].split(';')[0].strip()
 
-            tmp_dir = os.path.join(BASE_DIR, "tmp")
-            os.makedirs(tmp_dir, exist_ok=True)
-            target_path = os.path.join(tmp_dir, os.path.basename(uploaded_filename))
+            # Fast storage: use fast system SSD temporary directory instead of slow external drives
+            fast_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf", prefix="cleaner_")
+            target_path = fast_tmp.name
 
-            with open(target_path, "wb") as f_out:
-                f_out.write(file_data)
+            # Stream body chunk by chunk directly to disk with zero huge in-memory splits
+            end_boundary = b'\r\n' + boundary_marker
+            chunk_size = 1024 * 1024  # 1MB buffer
+            buffer = b''
+
+            while True:
+                chunk = self.rfile.read(chunk_size)
+                if not chunk:
+                    break
+                buffer += chunk
+                idx = buffer.find(end_boundary)
+                if idx != -1:
+                    fast_tmp.write(buffer[:idx])
+                    break
+                else:
+                    safe_len = len(buffer) - len(end_boundary)
+                    if safe_len > 0:
+                        fast_tmp.write(buffer[:safe_len])
+                        buffer = buffer[safe_len:]
+
+            fast_tmp.close()
+
+            # Cleanup previous active PDF if it was a temporary file
+            if ACTIVE_PDF_PATH and os.path.exists(ACTIVE_PDF_PATH) and "cleaner_" in ACTIVE_PDF_PATH:
+                try:
+                    os.unlink(ACTIVE_PDF_PATH)
+                except Exception:
+                    pass
 
             ACTIVE_PDF_PATH = target_path
+            ACTIVE_PDF_ORIGINAL_FILENAME = uploaded_filename
+
             import fitz
             doc = fitz.open(ACTIVE_PDF_PATH)
             TOTAL_PAGES = len(doc)
@@ -191,8 +218,11 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
 
                 try:
                     engine = engines[engine_id]["module"]
-                    base, ext = os.path.splitext(ACTIVE_PDF_PATH)
-                    out_path = f"{base}_cleaned{ext}"
+                    tmp_dir = os.path.join(BASE_DIR, "tmp")
+                    os.makedirs(tmp_dir, exist_ok=True)
+                    orig_name = ACTIVE_PDF_ORIGINAL_FILENAME or "document.pdf"
+                    base, ext = os.path.splitext(orig_name)
+                    out_path = os.path.join(tmp_dir, f"{base}_cleaned{ext}")
 
                     res = engine.process(ACTIVE_PDF_PATH, out_path, options, progress_callback=on_progress)
                     PROGRESS_STATE["result"] = res
