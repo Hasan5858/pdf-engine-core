@@ -6,7 +6,9 @@ import threading
 import webbrowser
 import time
 import tempfile
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import SimpleHTTPRequestHandler
+from socketserver import ThreadingMixIn
+from http.server import HTTPServer
 import urllib.parse
 
 # Add directory to sys.path
@@ -91,13 +93,19 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
             boundary_marker = ('--' + boundary).encode('latin-1')
 
             # Stream-read headers to find filename
-            headers = {}
+            content_length = int(self.headers.get('Content-Length', 0))
+            read_so_far = 0
+
             line = self.rfile.readline()
+            read_so_far += len(line)
             while boundary_marker not in line and line:
                 line = self.rfile.readline()
+                read_so_far += len(line)
 
+            headers = {}
             while True:
                 line = self.rfile.readline()
+                read_so_far += len(line)
                 if line in (b'\r\n', b'\n', b''):
                     break
                 if b':' in line:
@@ -115,25 +123,29 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
             fast_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf", prefix="cleaner_")
             target_path = fast_tmp.name
 
-            # Stream body chunk by chunk directly to disk with zero huge in-memory splits
-            end_boundary = b'\r\n' + boundary_marker
+            # Stream body chunk by chunk directly to disk based on Content-Length
+            remaining = content_length - read_so_far
+            tail_margin = len(boundary_marker) + 128
             chunk_size = 1024 * 1024  # 1MB buffer
-            buffer = b''
+            tail_buf = b''
 
-            while True:
-                chunk = self.rfile.read(chunk_size)
+            while remaining > 0:
+                to_read = min(chunk_size, remaining)
+                chunk = self.rfile.read(to_read)
                 if not chunk:
                     break
-                buffer += chunk
-                idx = buffer.find(end_boundary)
-                if idx != -1:
-                    fast_tmp.write(buffer[:idx])
-                    break
-                else:
-                    safe_len = len(buffer) - len(end_boundary)
-                    if safe_len > 0:
-                        fast_tmp.write(buffer[:safe_len])
-                        buffer = buffer[safe_len:]
+                remaining -= len(chunk)
+                tail_buf += chunk
+                if len(tail_buf) > tail_margin:
+                    fast_tmp.write(tail_buf[:-tail_margin])
+                    tail_buf = tail_buf[-tail_margin:]
+
+            # Strip trailing multipart boundary from the end
+            footer_pos = tail_buf.rfind(b'\r\n' + boundary_marker)
+            if footer_pos != -1:
+                fast_tmp.write(tail_buf[:footer_pos])
+            else:
+                fast_tmp.write(tail_buf)
 
             fast_tmp.close()
 
@@ -247,8 +259,11 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data).encode('utf-8'))
 
+class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+    daemon_threads = True
+
 def run_server():
-    server = HTTPServer(('127.0.0.1', PORT), AppRequestHandler)
+    server = ThreadedHTTPServer(('127.0.0.1', PORT), AppRequestHandler)
     print(f"==================================================")
     print(f" PDF Cleaner Studio — Engine Running")
     print(f" Open in Browser: http://127.0.0.1:{PORT}")

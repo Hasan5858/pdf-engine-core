@@ -247,11 +247,19 @@ function getOptions() {
   };
 }
 
+let previewAbortController = null;
+
 function requestPreview() {
+  if (previewAbortController) {
+    previewAbortController.abort();
+  }
+  previewAbortController = new AbortController();
+
   fetch("/api/preview", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ engine: engineSelector.value, page: currentPage, options: getOptions() })
+    body: JSON.stringify({ engine: engineSelector.value, page: currentPage, options: getOptions() }),
+    signal: previewAbortController.signal
   })
   .then(res => res.json())
   .then(data => {
@@ -259,7 +267,11 @@ function requestPreview() {
     currentCleanUrl = data.clean;
     applyCurrentView();
   })
-  .catch(console.error);
+  .catch(err => {
+    if (err.name !== "AbortError") {
+      console.error(err);
+    }
+  });
 }
 
 function renderImageToCanvas(dataUrl) {
