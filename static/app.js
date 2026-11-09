@@ -50,7 +50,8 @@ const chkDeletePromo = document.getElementById("chkDeletePromo");
 
 const btnPrevPage = document.getElementById("btnPrevPage");
 const btnNextPage = document.getElementById("btnNextPage");
-const pageIndicator = document.getElementById("pageIndicator");
+const pageNumberInput = document.getElementById("pageNumberInput");
+const pageTotalText = document.getElementById("pageTotalText");
 const tabCleaned = document.getElementById("tabCleaned");
 const tabOriginal = document.getElementById("tabOriginal");
 const previewCanvas = document.getElementById("previewCanvas");
@@ -293,6 +294,39 @@ tabOriginal.addEventListener("click", () => {
   applyCurrentView();
 });
 
+function jumpToPage(targetPageOneIndexed) {
+  if (totalPages <= 0) return;
+  let target = parseInt(targetPageOneIndexed, 10);
+  if (isNaN(target)) {
+    target = currentPage + 1;
+  }
+  if (target < 1) target = 1;
+  if (target > totalPages) target = totalPages;
+
+  const newIndex = target - 1;
+  if (newIndex !== currentPage) {
+    currentPage = newIndex;
+    updatePageNav();
+    requestPreview();
+  } else {
+    updatePageNav();
+  }
+}
+
+if (pageNumberInput) {
+  pageNumberInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      jumpToPage(pageNumberInput.value);
+      pageNumberInput.blur();
+    }
+  });
+
+  pageNumberInput.addEventListener("change", () => {
+    jumpToPage(pageNumberInput.value);
+  });
+}
+
 btnPrevPage.addEventListener("click", () => {
   if (currentPage > 0) {
     currentPage--;
@@ -310,9 +344,16 @@ btnNextPage.addEventListener("click", () => {
 });
 
 function updatePageNav() {
-  pageIndicator.textContent = `Page ${currentPage + 1} / ${totalPages}`;
-  btnPrevPage.disabled = (currentPage === 0);
-  btnNextPage.disabled = (currentPage >= totalPages - 1);
+  if (pageNumberInput) {
+    pageNumberInput.value = currentPage + 1;
+    pageNumberInput.max = totalPages > 0 ? totalPages : 1;
+    pageNumberInput.disabled = (totalPages <= 0);
+  }
+  if (pageTotalText) {
+    pageTotalText.textContent = `/ ${totalPages > 0 ? totalPages : 1}`;
+  }
+  btnPrevPage.disabled = (currentPage === 0 || totalPages <= 0);
+  btnNextPage.disabled = (currentPage >= totalPages - 1 || totalPages <= 0);
 }
 
 // Full PDF Export with Live Progress Bar

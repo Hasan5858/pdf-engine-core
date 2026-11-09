@@ -195,9 +195,13 @@
       <!-- Top Canvas Toolbar -->
       <div class="canvas-bar">
         <div class="page-controls">
-          <button class="btn-sm" id="btnPrevPage">◀</button>
-          <span id="pageIndicator" class="page-text">Page 1 / 1</span>
-          <button class="btn-sm" id="btnNextPage">▶</button>
+          <button class="btn-sm" id="btnPrevPage" title="Previous Page">◀</button>
+          <div class="page-jump-container">
+            <span>Page</span>
+            <input type="number" id="pageNumberInput" class="page-num-input" value="1" min="1" step="1">
+            <span id="pageTotalText" class="page-total">/ 1</span>
+          </div>
+          <button class="btn-sm" id="btnNextPage" title="Next Page">▶</button>
         </div>
 
         <div class="view-toggle">
