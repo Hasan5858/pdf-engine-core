@@ -1,7 +1,9 @@
 import sys
 import os
 import io
+import re
 import time
+import hashlib
 import pypdf
 import fitz
 from PIL import Image
@@ -25,7 +27,7 @@ def _get_stream_data(contents):
         return b"\n".join(combined)
     return b""
 
-def _is_promo_page(page, p0_data=None):
+def _is_promo_page(page, p0_data=None, shared_image_hashes=None):
     """Detects promotional cover/advertisement pages accurately."""
     res = page.get('/Resources')
     xo_map = {}
@@ -35,7 +37,7 @@ def _is_promo_page(page, p0_data=None):
             xo_map = res_obj['/XObject'].get_object()
             
     text = (page.extract_text() or '').strip()
-    promo_kws = ['pdfnexus', 'telegram', 'academic to admission', 'মেটিরিয়াল', 'মেটিরিয়াল', 'সমাহার']
+    promo_kws = ['pdfnexus', 'telegram', 'academic to admission', 'মেটিরিয়াল', 'মেটিরিয়াল', 'সমাহার']
     has_promo_kw = any(kw in text.lower() for kw in promo_kws)
     
     # Check if contents match initial promo page
@@ -48,7 +50,56 @@ def _is_promo_page(page, p0_data=None):
     if '/X1' not in xo_map and has_promo_kw:
         return True
         
+    # Full-page graphic repeated across multiple pages (same image data
+    # drawn as the page's only Do on 2+ pages) - distributor promo sheet.
+    if shared_image_hashes:
+        data = _get_stream_data(page.get('/Contents'))
+        if data:
+            drawn = _referenced_xnames(data)
+            if len(drawn) == 1:
+                for n in drawn:
+                    xval = xo_map.get("/" + n)
+                    if not xval:
+                        continue
+                    xobj = xval.get_object()
+                    if xobj.get('/Subtype') != '/Image':
+                        continue
+                    h = hashlib.sha1(xobj.get_data()).hexdigest()
+                    if h in shared_image_hashes:
+                        return True
     return False
+
+def _referenced_xnames(sub_data):
+    """Exact names of all XObjects drawn in this stream (e.g. /Im1 Do -> 'Im1')."""
+    return {n.decode("latin1") for n in re.findall(rb"/([A-Za-z][A-Za-z0-9_+\-.]*)\s+Do", sub_data)}
+
+def _clean_stream_data(sub_data, watermark_forms):
+    """
+    Surgically removes watermark draw commands from a content stream,
+    preserving all other content (main scans, text). Never blanks a whole
+    stream that also draws main content."""
+    sub_lower = sub_data.lower()
+    has_kw = any(w in sub_lower for w in [b"telegram", b"pdfnexus", b"t.me", b"joining link"])
+    hit_forms = _referenced_xnames(sub_data) & set(watermark_forms)
+
+    if not (has_kw or hit_forms):
+        return sub_data, False
+
+    cleaned = sub_data
+    if has_kw:
+        cleaned = re.sub(
+            rb"BT[\s\S]*?ET",
+            lambda m: b"" if any(w in m.group(0).lower() for w in [b"telegram", b"pdfnexus", b"t.me", b"joining link"]) else m.group(0),
+            cleaned
+        )
+    for fk in sorted(hit_forms):
+        tok = re.escape(fk.encode("latin1"))
+        # If the watermark Do has its own q...Q wrapper that draws nothing
+        # else, remove the whole wrapper block; otherwise remove the Do token.
+        cleaned, n_block = re.subn(rb"q(?:(?!q)[\s\S])*?/" + tok + rb"\s+Do\s*Q", b"", cleaned)
+        if not n_block:
+            cleaned, _ = re.subn(rb"/" + tok + rb"\s+Do", b"", cleaned)
+    return cleaned, cleaned != sub_data
 
 def preview_page(input_path, page_num=0, options=None):
     """Generates before & after image preview for Studio Web UI."""
@@ -61,7 +112,7 @@ def preview_page(input_path, page_num=0, options=None):
     reader = pypdf.PdfReader(input_path)
     page = reader.pages[page_num]
     
-    # Find and blank watermark forms
+    # Find and blank watermark forms / watermark images
     res = page.get('/Resources')
     watermark_forms = set()
     if res:
@@ -70,15 +121,18 @@ def preview_page(input_path, page_num=0, options=None):
             xo_map = res_obj['/XObject'].get_object()
             for xname, xval in xo_map.items():
                 xobj = xval.get_object()
-                if xobj.get('/Subtype') == '/Form':
+                subtype = xobj.get('/Subtype')
+                if subtype == '/Form':
                     fdata = xobj.get_data() if hasattr(xobj, 'get_data') else b''
                     fdata_lower = fdata.lower()
                     if any(w in fdata_lower for w in [b'telegram', b'pdfnexus', b't.me', b'joining link']):
-                        watermark_forms.add(xname)
                         watermark_forms.add(xname.lstrip('/'))
                         xobj.set_data(b'')
+                elif subtype == '/Image':
+                    if (xobj.get('/Width') == 720 and xobj.get('/Height') == 720) or (xname.startswith('/Xi') and xname != '/X1'):
+                        watermark_forms.add(xname.lstrip('/'))
                         
-    # Blank watermark references in /Contents stream
+    # Blank/Clean watermark references in /Contents stream
     contents = page.get('/Contents')
     if contents:
         c_obj = contents.get_object() if hasattr(contents, 'get_object') else contents
@@ -87,19 +141,14 @@ def preview_page(input_path, page_num=0, options=None):
                 sub_obj = item.get_object() if hasattr(item, 'get_object') else item
                 if hasattr(sub_obj, 'get_data'):
                     sub_data = sub_obj.get_data()
-                    sub_lower = sub_data.lower()
-                    should_blank = any(w in sub_lower for w in [b'telegram', b'pdfnexus', b't.me'])
-                    if not should_blank:
-                        for fk in watermark_forms:
-                            if f'/{fk}'.encode('latin1') in sub_data:
-                                should_blank = True
-                                break
-                    if should_blank:
-                        sub_obj.set_data(b'')
-        elif hasattr(c_obj, 'set_data'):
+                    cleaned_data, changed = _clean_stream_data(sub_data, watermark_forms)
+                    if changed:
+                        sub_obj.set_data(cleaned_data)
+        elif hasattr(c_obj, 'get_data'):
             sub_data = c_obj.get_data()
-            if any(w in sub_data.lower() for w in [b'telegram', b'pdfnexus', b't.me']):
-                c_obj.set_data(b'')
+            cleaned_data, changed = _clean_stream_data(sub_data, watermark_forms)
+            if changed:
+                c_obj.set_data(cleaned_data)
                 
     writer = pypdf.PdfWriter()
     writer.add_page(page)
@@ -138,8 +187,9 @@ def process(input_path, output_path=None, options=None, progress_callback=None):
     cleaned_count = 0
     watermark_forms = set()
     
-    # First pass: collect all watermark Form XObject names across the document
-    for page in reader.pages:
+    # First pass: collect all watermark Form XObject & Image names across the document
+    image_hash_users = {}
+    for i, page in enumerate(reader.pages):
         res = page.get('/Resources')
         if not res:
             continue
@@ -149,14 +199,23 @@ def process(input_path, output_path=None, options=None, progress_callback=None):
         xo_map = res_obj['/XObject'].get_object()
         for xname, xval in xo_map.items():
             xobj = xval.get_object()
-            if xobj.get('/Subtype') == '/Form':
+            subtype = xobj.get('/Subtype')
+            if subtype == '/Form':
                 fdata = xobj.get_data() if hasattr(xobj, 'get_data') else b''
                 fdata_lower = fdata.lower()
                 if any(w in fdata_lower for w in [b'telegram', b'pdfnexus', b't.me', b'joining link']):
-                    watermark_forms.add(xname)
                     watermark_forms.add(xname.lstrip('/'))
                     xobj.set_data(b'')
-                    
+            elif subtype == '/Image':
+                if (xobj.get('/Width') == 720 and xobj.get('/Height') == 720) or (xname.startswith('/Xi') and xname != '/X1'):
+                    watermark_forms.add(xname.lstrip('/'))
+                idata = xobj.get_data() if hasattr(xobj, 'get_data') else b''
+                h = hashlib.sha1(idata).hexdigest()
+                image_hash_users.setdefault(h, set()).add(i)
+                
+    # Image data drawn on 2+ pages = repeated graphic (promo sheet / shared strip)
+    shared_image_hashes = {h for h, pgs in image_hash_users.items() if len(pgs) >= 2}
+    
     # Second pass: process and filter pages
     for i in range(total_pages):
         page = reader.pages[i]
@@ -166,7 +225,7 @@ def process(input_path, output_path=None, options=None, progress_callback=None):
             progress_callback(i + 1, total_pages, f"Purifying page {i + 1}/{total_pages}")
             
         # 1. Check if page is promotional
-        if _is_promo_page(page, p0_data if p0_is_promo else None):
+        if _is_promo_page(page, p0_data if p0_is_promo else None, shared_image_hashes):
             promo_removed.append(i + 1)
             continue
             
@@ -183,21 +242,15 @@ def process(input_path, output_path=None, options=None, progress_callback=None):
                 sub_obj = item.get_object() if hasattr(item, "get_object") else item
                 if hasattr(sub_obj, "get_data"):
                     sub_data = sub_obj.get_data()
-                    sub_lower = sub_data.lower()
-                    should_blank = any(w in sub_lower for w in [b'telegram', b'pdfnexus', b't.me'])
-                    if not should_blank:
-                        for fk in watermark_forms:
-                            if f'/{fk}'.encode('latin1') in sub_data:
-                                should_blank = True
-                                break
-                    if should_blank:
-                        sub_obj.set_data(b"")
+                    cleaned_data, changed = _clean_stream_data(sub_data, watermark_forms)
+                    if changed:
+                        sub_obj.set_data(cleaned_data)
                         page_cleaned = True
         elif hasattr(c_obj, "get_data"):
             sub_data = c_obj.get_data()
-            sub_lower = sub_data.lower()
-            if any(w in sub_lower for w in [b'telegram', b'pdfnexus', b't.me']):
-                c_obj.set_data(b"")
+            cleaned_data, changed = _clean_stream_data(sub_data, watermark_forms)
+            if changed:
+                c_obj.set_data(cleaned_data)
                 page_cleaned = True
                 
         if page_cleaned:
